@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Models\Item;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -37,6 +39,15 @@ class ItemController extends GeneratedCodeCrudController
                 $model ? 'sometimes' : 'required',
                 'string',
                 'max:200',
+            ],
+            'barcode' => [
+                'nullable',
+                'string',
+                'max:50',
+                'regex:/^[\x21-\x7E]+$/',
+                function (string $attribute, mixed $value, callable $fail) use ($model): void {
+                    $this->validateBarcode((string) $value, $model, $fail);
+                },
             ],
             'category_id' => [
                 'nullable',
@@ -83,7 +94,126 @@ class ItemController extends GeneratedCodeCrudController
 
     protected function searchableColumns(): array
     {
-        return ['item_code', 'item_description'];
+        return ['item_code', 'item_description', 'barcode'];
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $this->normalizeBarcodeInput($request);
+
+        try {
+            return parent::store($request);
+        } catch (QueryException $exception) {
+            return $this->duplicateBarcodeResponse($exception);
+        }
+    }
+
+    public function update(Request $request, int|string $id): JsonResponse
+    {
+        $this->normalizeBarcodeInput($request);
+
+        try {
+            return parent::update($request, $id);
+        } catch (QueryException $exception) {
+            return $this->duplicateBarcodeResponse($exception);
+        }
+    }
+
+    /**
+     * Strips scanner suffixes/control characters and trims, so validation and
+     * uniqueness run against the value that is actually stored. Blank becomes null.
+     */
+    private function normalizeBarcodeInput(Request $request): void
+    {
+        if (! $request->exists('barcode')) {
+            return;
+        }
+
+        $value = $request->input('barcode');
+
+        if (is_string($value)) {
+            $value = trim(preg_replace('/[\x00-\x1F\x7F]+/', '', $value) ?? '');
+            $request->merge(['barcode' => $value === '' ? null : $value]);
+        }
+    }
+
+    private function validateBarcode(string $barcode, ?Model $model, callable $fail): void
+    {
+        if (
+            ctype_digit($barcode) &&
+            in_array(strlen($barcode), [8, 12, 13, 14], true) &&
+            ! $this->hasValidGs1CheckDigit($barcode)
+        ) {
+            $fail('The barcode check digit is not valid for a '.strlen($barcode).'-digit EAN/UPC code.');
+
+            return;
+        }
+
+        $existing = Item::query()
+            ->where('BC', $this->branchCode())
+            ->whereIn('barcode', $this->barcodeVariants($barcode))
+            ->when($model, fn ($query) => $query->whereKeyNot($model->getKey()))
+            ->first(['item_code', 'item_description']);
+
+        if ($existing) {
+            $fail("This barcode is already used by {$existing->item_code} ({$existing->item_description}).");
+
+            return;
+        }
+
+        $codeClash = Item::query()
+            ->where('BC', $this->branchCode())
+            ->where('item_code', $barcode)
+            ->when($model, fn ($query) => $query->whereKeyNot($model->getKey()))
+            ->exists();
+
+        if ($codeClash) {
+            $fail('The barcode cannot be the item code of another item.');
+        }
+    }
+
+    /**
+     * UPC-A (12 digits) and its EAN-13 form with a leading zero are the same product.
+     */
+    private function barcodeVariants(string $barcode): array
+    {
+        $variants = [$barcode];
+
+        if (ctype_digit($barcode) && strlen($barcode) === 12) {
+            $variants[] = '0'.$barcode;
+        } elseif (ctype_digit($barcode) && strlen($barcode) === 13 && $barcode[0] === '0') {
+            $variants[] = substr($barcode, 1);
+        }
+
+        return $variants;
+    }
+
+    private function hasValidGs1CheckDigit(string $digits): bool
+    {
+        $body = substr($digits, 0, -1);
+        $sum = 0;
+        $weight = 3;
+
+        for ($index = strlen($body) - 1; $index >= 0; $index--) {
+            $sum += (int) $body[$index] * $weight;
+            $weight = $weight === 3 ? 1 : 3;
+        }
+
+        return (10 - ($sum % 10)) % 10 === (int) substr($digits, -1);
+    }
+
+    private function duplicateBarcodeResponse(QueryException $exception): JsonResponse
+    {
+        if (
+            in_array($exception->getCode(), ['23000', '23505'], true) &&
+            str_contains($exception->getMessage(), 'barcode')
+        ) {
+            $message = 'This barcode is already used by another item in this branch.';
+
+            return $this->errorResponse($message, 422, ['barcode' => [$message]]);
+        }
+
+        throw $exception;
     }
 
     protected function defaultOrderColumn(): string

@@ -52,6 +52,7 @@ interface Item {
   id: number;
   item_code: string;
   item_description: string;
+  barcode: string | null;
   category_id: number | null;
   brand_id: number | null;
   make_id: number | null;
@@ -75,6 +76,7 @@ interface Item {
 
 interface ItemFormState {
   item_description: string;
+  barcode: string;
   category_id: string;
   brand_id: string;
   make_id: string;
@@ -103,8 +105,14 @@ interface PaginationMeta {
 
 const ITEMS_PER_PAGE = 50;
 
+/** Mirrors the backend: drop scanner control characters (CR/LF/TAB/GS) and trim. */
+function normalizeBarcode(value: string): string {
+  return value.replace(/[\x00-\x1F\x7F]+/g, '').trim();
+}
+
 const DEFAULT_FORM: ItemFormState = {
   item_description: '',
+  barcode: '',
   category_id: '',
   brand_id: '',
   make_id: '',
@@ -459,6 +467,7 @@ export default function ItemsPage() {
     setEditingItem(item);
     setForm({
       item_description: item.item_description,
+      barcode: item.barcode ?? '',
       category_id: item.category_id ? String(item.category_id) : '',
       brand_id: item.brand_id ? String(item.brand_id) : '',
       make_id: item.make_id ? String(item.make_id) : '',
@@ -557,11 +566,15 @@ export default function ItemsPage() {
       return;
     }
 
+    // Clear the previous attempt's message so each Save shows only its own result.
+    setNotice(null);
     setSaving(true);
 
     try {
       const payload = {
         item_description: form.item_description.trim(),
+        // Always a string (never Number) so leading zeros survive; blank clears it.
+        barcode: normalizeBarcode(form.barcode) || null,
         category_id: form.category_id ? Number(form.category_id) : null,
         brand_id: form.brand_id ? Number(form.brand_id) : null,
         make_id: form.make_id ? Number(form.make_id) : null,
@@ -714,7 +727,7 @@ export default function ItemsPage() {
                 setSearch(event.target.value);
                 setCurrentPage(1);
               }}
-              placeholder="Search item code or description..."
+              placeholder="Search item code, description or barcode..."
               className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
             />
           </div>
@@ -735,11 +748,12 @@ export default function ItemsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] text-left text-sm">
+          <table className="w-full min-w-[1320px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold uppercase tracking-wider text-slate-500">
                 <th className="px-5 py-3.5">Code</th>
                 <th className="px-5 py-3.5">Description</th>
+                <th className="px-5 py-3.5">Barcode</th>
                 <th className="px-5 py-3.5">
                   <button
                     type="button"
@@ -761,10 +775,10 @@ export default function ItemsPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <LoadingTableRow columns={9} label="Loading items..." />
+                <LoadingTableRow columns={10} label="Loading items..." />
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-5 py-14 text-center text-slate-400">
+                  <td colSpan={10} className="px-5 py-14 text-center text-slate-400">
                     No items found in this branch.
                   </td>
                 </tr>
@@ -781,6 +795,9 @@ export default function ItemsPage() {
                       <div className="mt-1 text-xs text-slate-500">
                         {item.brand?.name || 'No brand'} · {item.make?.name || 'No make'} · {item.color?.name || 'No color'}
                       </div>
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-4 font-mono text-xs text-slate-700">
+                      {item.barcode || '—'}
                     </td>
                     <td className="px-5 py-4 text-slate-700">
                       <div className="font-medium">
@@ -929,6 +946,11 @@ export default function ItemsPage() {
           width="max-w-4xl"
         >
           <form onSubmit={handleSubmit} className="space-y-5 p-6">
+            {notice && notice.type !== 'success' && (
+              <OperationNotice type={notice.type} details={notice.details}>
+                {notice.message}
+              </OperationNotice>
+            )}
             <div className="grid gap-4">
               <OperationField label="Item description" required>
                 <input
@@ -944,6 +966,35 @@ export default function ItemsPage() {
                   className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                   required
                 />
+              </OperationField>
+
+              <OperationField
+                label="Barcode"
+                help="Scan or type the product barcode. Leave blank if the item has none; clear it to remove."
+              >
+                <div className="relative">
+                  <Barcode className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    inputMode="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    maxLength={50}
+                    value={form.barcode}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        barcode: normalizeBarcode(event.target.value),
+                      }))
+                    }
+                    onKeyDown={(event) => {
+                      // Scanners end with Enter: keep it from submitting the item form.
+                      if (event.key === 'Enter') event.preventDefault();
+                    }}
+                    placeholder="e.g. 4791234567890"
+                    className="w-full rounded-xl border border-slate-300 py-2.5 pl-10 pr-3.5 font-mono text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
               </OperationField>
 
               <div className="grid gap-4 sm:grid-cols-2">
