@@ -348,9 +348,9 @@ export default function StockPage() {
               <SearchSelect
                 value={receipt.item_code}
                 onChange={changeReceiptItem}
-                options={inventory.map((item) => ({ value: item.item_code, label: `${item.item_code} - ${item.item_description}` }))}
+                options={inventory.map((item) => ({ value: item.item_code, label: `${item.item_code} - ${item.item_description}`, keywords: item.barcode }))}
                 placeholder="Select item"
-                searchPlaceholder="Search by code or description..."
+                searchPlaceholder="Search by code, description or barcode..."
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm"
                 required
               />

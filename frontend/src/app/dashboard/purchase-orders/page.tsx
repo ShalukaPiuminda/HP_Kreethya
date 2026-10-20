@@ -588,10 +588,11 @@ export default function PurchaseOrdersPage() {
                             options={items.map((item) => ({
                               value: item.item_code,
                               label: `${item.item_code} - ${item.item_description}`,
+                              keywords: item.barcode,
                               disabled: form.items.some((candidate) => candidate.key !== line.key && candidate.item_code === item.item_code),
                             }))}
                             placeholder="Select item"
-                            searchPlaceholder="Search by code or description..."
+                            searchPlaceholder="Search by code, description or barcode..."
                             className={inputClass}
                             required
                           />
