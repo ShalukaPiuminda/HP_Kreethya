@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -50,7 +50,9 @@ import {
   StatusPill,
 } from '@/components/operation-ui';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { parseSerialNumbers } from '@/lib/inventory';
+import { parseSerialNumbers, type StockItem } from '@/lib/inventory';
+import { findItemByScan } from '@/lib/barcode';
+import { ScanInput } from '@/components/scan-input';
 import {
   type HpAgreement,
   type HpCalculation,
@@ -225,6 +227,77 @@ const emptyPersonQuickAdd = (): PersonQuickAddForm => ({
   phone: '',
   address: '',
 });
+
+type ScanOutcome = { type: 'success' | 'error'; message: string };
+
+/**
+ * Applies one scanned item to the draft agreement lines (never posts, never moves stock):
+ * adds 1 to a line of the same item/batch whose price and discount were not changed by hand,
+ * otherwise starts a line on the first batch that still has stock left in the issue store.
+ */
+function applyHpScan(lines: LineForm[], item: StockItem, storeId: number): { lines: LineForm[]; outcome: ScanOutcome } {
+  const label = `${item.item_code} - ${item.item_description}`;
+  const serialHint = item.is_serialized ? ' Select the serial number for the new unit.' : '';
+
+  if (!storeId) {
+    return { lines, outcome: { type: 'error', message: 'Select the issue store before scanning items.' } };
+  }
+
+  const storeStock = item.stores.find((stock) => stock.store_id === storeId)?.qty_in_hand ?? 0;
+  if (storeStock <= 0) {
+    return { lines, outcome: { type: 'error', message: `${label} is out of stock in this store.` } };
+  }
+
+  const batches = item.batches.filter((batch) => batch.store_id === storeId && batch.qty_in_hand > 0);
+  const remaining = (batchNo: string) => {
+    const onHand = item.is_batch
+      ? batches.find((batch) => batch.batch_no === batchNo)?.qty_in_hand ?? 0
+      : storeStock;
+    const used = lines
+      .filter((line) => line.item_code === item.item_code && (!item.is_batch || line.batch_no === batchNo))
+      .reduce((sum, line) => sum + Number(line.qty || 0), 0);
+
+    return onHand - used;
+  };
+
+  const mergeIndex = lines.findIndex((line) =>
+    line.item_code === item.item_code
+    && line.unit_price === ''
+    && Number(line.discount || 0) <= 0
+    && (!item.is_batch || line.batch_no !== '')
+    && remaining(line.batch_no) > 0
+  );
+
+  if (mergeIndex >= 0) {
+    const qty = Number(lines[mergeIndex].qty || 0) + 1;
+    return {
+      lines: lines.map((line, index) => (index === mergeIndex ? { ...line, qty: String(qty) } : line)),
+      outcome: { type: 'success', message: `${label}: quantity is now ${qty}.${serialHint}` },
+    };
+  }
+
+  const batchNo = item.is_batch
+    ? batches.find((batch) => remaining(batch.batch_no) > 0)?.batch_no
+    : remaining('') > 0 ? '' : undefined;
+
+  if (batchNo === undefined) {
+    return { lines, outcome: { type: 'error', message: `No more stock of ${label} left in this store for this agreement.` } };
+  }
+
+  const blankIndex = lines.findIndex((line) => !line.item_code);
+  const base = blankIndex >= 0 ? lines[blankIndex] : emptyLine();
+  const newLine: LineForm = { ...base, item_code: item.item_code, batch_no: batchNo, unit_price: '', serial_numbers: '', qty: '1' };
+
+  return {
+    lines: blankIndex >= 0
+      ? lines.map((line, index) => (index === blankIndex ? newLine : line))
+      : [...lines, newLine],
+    outcome: {
+      type: 'success',
+      message: `${label} added${item.is_batch ? ` from batch ${batchNo}` : ''}.${serialHint}`,
+    },
+  };
+}
 
 function serialSelections(value: string, qty: string): string[] {
   const count = Math.max(0, Number(qty || 0));
@@ -593,6 +666,33 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
   const [calculation, setCalculation] = useState<HpCalculation | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanNotice, setScanNotice] = useState<ScanOutcome | null>(null);
+  // Latest committed lines/store for the scan handler, so fast scans build on each other in order.
+  const linesRef = useRef(lines);
+  const storeRef = useRef(form.store_id);
+
+  useLayoutEffect(() => {
+    linesRef.current = lines;
+    storeRef.current = form.store_id;
+  });
+
+  function handleScan(code: string) {
+    const item = findItemByScan(options.items, code);
+    if (!item) {
+      setScanNotice({
+        type: 'error',
+        message: `Unknown barcode "${code}". No item in this branch uses it. If it was just added, reload the page.`,
+      });
+      return;
+    }
+
+    const result = applyHpScan(linesRef.current, item, Number(storeRef.current));
+    if (result.lines !== linesRef.current) {
+      linesRef.current = result.lines;
+      setLines(result.lines);
+    }
+    setScanNotice(result.outcome);
+  }
 
   const selectedStore = Number(form.store_id);
   const selectedCustomer = customers.find((customer) => customer.Code === form.customer_code);
@@ -841,12 +941,37 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
           title="Contract Items"
           subtitle={form.store_id ? 'Batch prices and availability come from the selected store.' : 'Select a store to see the items in stock.'}
           action={
-            <button type="button" onClick={() => setLines([...lines, emptyLine()])} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700">
-              <Plus className="h-4 w-4" /> Add Item
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <ScanInput
+                onScan={handleScan}
+                disabled={!form.store_id}
+                placeholder={form.store_id ? 'Scan barcode + Enter' : 'Select a store to scan'}
+                className="w-44 sm:w-64"
+              />
+              <button type="button" onClick={() => setLines([...lines, emptyLine()])} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700">
+                <Plus className="h-4 w-4" /> Add Item
+              </button>
+            </div>
           }
           bodyClassName="p-0"
         >
+          {scanNotice && (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`flex items-center gap-2 border-b px-5 py-2.5 text-xs font-semibold ${
+                scanNotice.type === 'error'
+                  ? 'border-rose-100 bg-rose-50 text-rose-700'
+                  : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+              }`}
+            >
+              {scanNotice.type === 'error'
+                ? <AlertTriangle className="h-4 w-4 shrink-0" />
+                : <CheckCircle2 className="h-4 w-4 shrink-0" />}
+              {scanNotice.message}
+            </div>
+          )}
+
           <LineHeader columns={['Item', 'Batch', 'Qty', 'Unit Price', 'Discount', 'Line Net']} />
 
           <div className="divide-y divide-slate-100">
@@ -882,7 +1007,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
                     </span>
                     <LineField label="Item" required className="col-span-2 md:col-span-4 xl:col-span-1">
                       <IconSlot icon={Package}>
-                        <SearchSelect value={line.item_code} onChange={(value) => updateLine(index, { item_code: value, batch_no: '', unit_price: '', serial_numbers: '' })} options={options.items.filter((candidate) => candidate.stores.some((stock) => stock.store_id === selectedStore && stock.qty_in_hand > 0)).map((candidate) => ({ value: candidate.item_code, label: `${candidate.item_code} · ${candidate.item_description}`, description: `${candidate.stores.find((stock) => stock.store_id === selectedStore)?.qty_in_hand ?? 0} in stock` }))} placeholder={form.store_id ? 'Select item' : 'Select a store first'} searchPlaceholder="Search by code or description..." className={iconInputClass} required />
+                        <SearchSelect value={line.item_code} onChange={(value) => updateLine(index, { item_code: value, batch_no: '', unit_price: '', serial_numbers: '' })} options={options.items.filter((candidate) => candidate.stores.some((stock) => stock.store_id === selectedStore && stock.qty_in_hand > 0)).map((candidate) => ({ value: candidate.item_code, label: `${candidate.item_code} · ${candidate.item_description}`, description: `${candidate.stores.find((stock) => stock.store_id === selectedStore)?.qty_in_hand ?? 0} in stock`, keywords: candidate.barcode }))} placeholder={form.store_id ? 'Select item' : 'Select a store first'} searchPlaceholder="Search by code, description or barcode..." className={iconInputClass} required />
                       </IconSlot>
                     </LineField>
                     <LineField label="Batch" required={Boolean(item?.is_batch)} className="col-span-2 xl:col-span-1">
