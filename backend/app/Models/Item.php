@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class Item extends Model
 {
     protected $table = 'items';
-    protected $fillable = ['item_code', 'item_description', 'barcode','category_id', 'brand_id', 'make_id', 'color_id', 'is_batch', 'default_batch_price_mode', 'is_serialized', 'reorder_level', 'sales_criteria_enabled', 'min_sales_qty', 'max_sales_qty', 'min_sales_price', 'max_sales_price', 'standard_purchase_price', 'standard_sales_price', 'BC', 'UID'];
+    protected $fillable = ['item_code', 'item_description', 'barcode', 'category_id', 'brand_id', 'make_id', 'color_id', 'is_batch', 'default_batch_price_mode', 'is_serialized', 'reorder_level', 'sales_criteria_enabled', 'min_sales_qty', 'max_sales_qty', 'min_sales_price', 'max_sales_price', 'standard_purchase_price', 'standard_sales_price', 'BC', 'UID'];
     public $timestamps = false;
 
     protected $casts = [

@@ -139,9 +139,11 @@ class ItemController extends GeneratedCodeCrudController
 
     private function validateBarcode(string $barcode, ?Model $model, callable $fail): void
     {
+        // 8-digit codes are not checked: UPC-E uses a different check-digit rule than EAN-8,
+        // and scanners already verify the check digit when they read a symbol.
         if (
             ctype_digit($barcode) &&
-            in_array(strlen($barcode), [8, 12, 13, 14], true) &&
+            in_array(strlen($barcode), [12, 13, 14], true) &&
             ! $this->hasValidGs1CheckDigit($barcode)
         ) {
             $fail('The barcode check digit is not valid for a '.strlen($barcode).'-digit EAN/UPC code.');

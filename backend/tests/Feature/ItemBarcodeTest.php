@@ -120,6 +120,16 @@ class ItemBarcodeTest extends TestCase
             ->assertJsonPath('data.barcode', 'SHOP-00042');
     }
 
+    public function test_eight_digit_upc_e_codes_are_accepted_without_ean_8_check(): void
+    {
+        Sanctum::actingAs($this->hqAdmin);
+
+        // Fails the EAN-8 check-digit rule, but is a valid shape for UPC-E.
+        $this->postJson('/api/v1/items', $this->itemPayload(['barcode' => '12345678']))
+            ->assertCreated()
+            ->assertJsonPath('data.barcode', '12345678');
+    }
+
     public function test_barcode_cannot_be_another_items_code(): void
     {
         Sanctum::actingAs($this->hqAdmin);
