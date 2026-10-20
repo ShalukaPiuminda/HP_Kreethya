@@ -1,0 +1,190 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "sales-invoice-details-report",
+    "name": "Sales Invoice Details Report",
+    "category": "Sales & Hire Purchase",
+    "description": null,
+    "sql_query": "SELECT\n    h.Invoice_no                                                AS invoice_no,\n    h.Invoice_date                                              AS invoice_date,\n    COALESCE(NULLIF(d.Item_s_code, ''), d.Item_code)            AS model,\n    COALESCE(NULLIF(d.Item_description, ''), i.item_description) AS item_description,\n    d.QTY                                                       AS qty,\n    d.Unit_price                                                AS unit_price,\n    d.QTY * d.Unit_price                                        AS gross_amount,\n    d.QTY * d.Unit_price - d.Net_value                          AS discount,\n    d.Net_value                                                 AS net_value,\n    COALESCE(ib.purchase_price, i.standard_purchase_price, 0)   AS purchase_price,\n    d.QTY * COALESCE(ib.purchase_price, i.standard_purchase_price, 0)               AS total_purchase_price,\n    d.Net_value - d.QTY * COALESCE(ib.purchase_price, i.standard_purchase_price, 0) AS profit\nFROM t_invoice_deils d\nJOIN t_invoice_sums h      ON h.Invoice_no = d.Invoice_no\nLEFT JOIN items i          ON i.item_code  = d.Item_code\nLEFT JOIN item_batches ib  ON ib.batch_no  = d.batch_no\n                          AND ib.item_code = d.Item_code\n                          AND ib.store_id  = d.store_id\nWHERE h.BC = :bc\n  AND h.Invoice_date BETWEEN :from AND :to\n  AND (:store_id    IS NULL OR d.store_id      = :store_id)\n  AND (:salesman_id IS NULL OR h.salesman_id   = :salesman_id)\n  AND (:customer    IS NULL OR h.customer_code = :customer)\n  AND (:item_code   IS NULL OR d.Item_code     = :item_code)\n  AND (:search      IS NULL OR h.Invoice_no       LIKE CONCAT('%', :search, '%')\n                            OR d.Item_code        LIKE CONCAT('%', :search, '%')\n                            OR d.Item_description LIKE CONCAT('%', :search, '%'))\nORDER BY h.Invoice_date, h.Invoice_no, d.id;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "store_id",
+            "label": "Store",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "stores",
+            "options": []
+        },
+        {
+            "name": "salesman_id",
+            "label": "Salesman",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "salesmen",
+            "options": []
+        },
+        {
+            "name": "customer",
+            "label": "Customer",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "customers",
+            "options": []
+        },
+        {
+            "name": "item_code",
+            "label": "Item",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "items",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "invoice_no",
+            "label": "Invoice No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "invoice_date",
+            "label": "Invoice Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "model",
+            "label": "Model",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "item_description",
+            "label": "Item Description",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "qty",
+            "label": "Qty",
+            "align": "right",
+            "format": "number",
+            "total": true
+        },
+        {
+            "key": "unit_price",
+            "label": "Unit Price",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "gross_amount",
+            "label": "Gross Amount",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "discount",
+            "label": "Discount",
+            "align": "right",
+            "format": "number",
+            "total": true
+        },
+        {
+            "key": "net_value",
+            "label": "Net Value",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "purchase_price",
+            "label": "Purchase Price",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "total_purchase_price",
+            "label": "Total Purchase Price",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "profit",
+            "label": "Profit",
+            "align": "left",
+            "format": "money",
+            "total": true
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 4
+}

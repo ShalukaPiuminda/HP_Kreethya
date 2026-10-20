@@ -1,0 +1,38 @@
+# Dependencies and build directories
+node_modules/
+vendor/
+.next/
+.reasonix/
+dist/
+coverage/
+
+# Local databases and dumps
+*.sql
+*.log
+token.txt
+
+# Environment files
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Legacy monolithic project and dump (Strictly Excluded)
+senara/
+smartom_senara.sql
+
+# Planning and agent/reference files
+.gitattributes
+implementation_plan.md
+progress.md
+README.md
+backend/README.md
+frontend/README.md
+frontend/CLAUDE.md
+frontend/AGENTS.md
+
+# OS/IDE settings
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

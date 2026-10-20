@@ -1,0 +1,229 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "customer-cheque-report",
+    "name": "Customer Cheque Report",
+    "category": "Customer",
+    "description": null,
+    "sql_query": "SELECT\n    DATE(q.created_at)                                       AS received_date,\n    q.cheques_no                                             AS cheque_no,\n    q.bank,\n    q.branch_code                                            AS bank_branch,\n    q.acc_no                                                 AS account_no,\n    q.due_date,\n    CASE q.trans_type\n        WHEN 'SALE'             THEN 'Sales Invoice'\n        WHEN 'CUSTOMER_PAYMENT' THEN 'Customer Payment'\n        WHEN 'CUSTOMER_ADVANCE' THEN 'Advance Payment'\n        WHEN 'HP_DOWN_PAYMENT'  THEN 'HP Down Payment'\n        WHEN 'HP_INSTALLMENT'   THEN 'HP Installment'\n        WHEN 'HP_CONVERSION'    THEN 'HP Cash Conversion'\n        ELSE REPLACE(q.trans_type, '_', ' ')\n    END                                                      AS received_for,\n    q.trans_no                                               AS reference_no,\n    cu.Code                                                  AS customer_code,\n    cu.name                                                  AS customer_name,\n    cu.phone                                                 AS customer_phone,\n    q.amount,\n    CONCAT(UPPER(LEFT(q.status, 1)), SUBSTRING(q.status, 2)) AS status,\n    q.realized_date,\n    COALESCE(CONCAT(bd.bank_name, ' - ', bd.account_no), '') AS deposited_to,\n    q.return_reason,\n    CASE\n        WHEN q.status = 'pending' AND q.due_date < CURDATE() THEN DATEDIFF(CURDATE(), q.due_date)\n        ELSE NULL\n    END                                                      AS days_overdue\nFROM t_cus_cheques q\nLEFT JOIN t_invoice_sums s           ON q.trans_type = 'SALE'             AND s.Invoice_no = q.trans_no\nLEFT JOIN t_customer_payments p      ON q.trans_type = 'CUSTOMER_PAYMENT' AND p.Payment_no = q.trans_no\nLEFT JOIN t_advanc_cus_payments v    ON q.trans_type = 'CUSTOMER_ADVANCE' AND v.payment_no = q.trans_no\nLEFT JOIN t_hire_purchase_to_sales t ON q.trans_type = 'HP_CONVERSION'    AND t.conversion_no = q.trans_no\nLEFT JOIN t_hire_purchase_sums h     ON h.invoice_no = CASE q.trans_type\n        WHEN 'HP_DOWN_PAYMENT' THEN REPLACE(q.trans_no, '-DP', '')\n        WHEN 'HP_INSTALLMENT'  THEN (SELECT MIN(ip.invoice_no) FROM t_hp_installment_payments ip\n                                      WHERE ip.collection_no = q.trans_no OR ip.payment_no = q.trans_no)\n        WHEN 'HP_CONVERSION'   THEN t.invoice_no\n    END\nLEFT JOIN customers cu ON cu.BC = q.BC AND (\n        cu.Code = COALESCE(s.customer_code, h.customer_code)\n     OR cu.NIC  = COALESCE(p.Customer_NIC, v.customer_nic))\nLEFT JOIN bank_details bd ON bd.id = q.bank_detail_id\nWHERE q.BC = :bc\n  AND (\n      (COALESCE(:date_by, 'due') = 'due' AND q.due_date BETWEEN :from AND :to)\n   OR (:date_by = 'received'             AND DATE(q.created_at) BETWEEN :from AND :to)\n   OR (:date_by = 'realized'             AND q.realized_date BETWEEN :from AND :to)\n  )\n  AND (:status   IS NULL OR q.status = :status)\n  AND (:customer IS NULL OR cu.Code  = :customer)\n  AND (:search   IS NULL OR q.cheques_no LIKE CONCAT('%', :search, '%')\n                         OR q.bank       LIKE CONCAT('%', :search, '%')\n                         OR q.trans_no   LIKE CONCAT('%', :search, '%'))\nORDER BY q.due_date, q.cheques_no;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "date_by",
+            "label": "Date By",
+            "type": "date",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "customer",
+            "label": "Customer",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "customers",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "status",
+            "label": "Status",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "list",
+            "options": [
+                {
+                    "value": "pending",
+                    "label": "Pending"
+                },
+                {
+                    "value": "passed",
+                    "label": "Passed"
+                },
+                {
+                    "value": "returned",
+                    "label": "Returned"
+                }
+            ]
+        }
+    ],
+    "columns": [
+        {
+            "key": "received_date",
+            "label": "Received Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "cheque_no",
+            "label": "Cheque No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "bank",
+            "label": "Bank",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "bank_branch",
+            "label": "Bank Branch",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "account_no",
+            "label": "Account No",
+            "align": "right",
+            "format": "number",
+            "total": false
+        },
+        {
+            "key": "due_date",
+            "label": "Due Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "received_for",
+            "label": "Received For",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "reference_no",
+            "label": "Reference No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "customer_code",
+            "label": "Customer Code",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "customer_name",
+            "label": "Customer Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "customer_phone",
+            "label": "Customer Phone",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "status",
+            "label": "Status",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "realized_date",
+            "label": "Realized Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "deposited_to",
+            "label": "Deposited To",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "return_reason",
+            "label": "Return Reason",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "days_overdue",
+            "label": "Days Overdue",
+            "align": "right",
+            "format": "text",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 5
+}

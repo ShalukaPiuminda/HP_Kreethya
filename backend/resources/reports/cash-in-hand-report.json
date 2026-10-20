@@ -1,0 +1,98 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "cash-in-hand-report",
+    "name": "Cash In Hand Report",
+    "category": "Sales & Hire Purchase",
+    "description": null,
+    "sql_query": "SELECT details, cash_in, cash_out, net\nFROM (\n    -- Opening balance: cash before the From date\n    SELECT\n        0                                                     AS sort_group,\n        'Opening Balance'                                     AS details,\n        GREATEST(COALESCE(SUM(t.dr_amount - t.cr_amount), 0), 0)  AS cash_in,\n        GREATEST(COALESCE(SUM(t.cr_amount - t.dr_amount), 0), 0)  AS cash_out,\n        COALESCE(SUM(t.dr_amount - t.cr_amount), 0)           AS net\n    FROM t_account_trans t\n    WHERE t.BC = :bc\n      AND t.AccCode = :account\n      AND t.Ddate < :from\n\n    UNION ALL\n\n    -- Movements in the period, one row per transaction type\n    SELECT\n        CASE WHEN SUM(t.dr_amount) >= SUM(t.cr_amount) THEN 1 ELSE 2 END AS sort_group,\n        CASE t.trance_type\n            WHEN 'SALES_INVOICE_RECEIPT'     THEN 'Sales'\n            WHEN 'SALES_INVOICE'             THEN 'Sales'\n            WHEN 'SALE_PAYMENT'              THEN 'Sales'\n            WHEN 'CUSTOMER_PAYMENT'          THEN 'Customer Payment'\n            WHEN 'CUSTOMER_PAYMENT_RECEIPT'  THEN 'Customer Payment'\n            WHEN 'CUSTOMER_ADVANCE'          THEN 'Customer Advance'\n            WHEN 'CUSTOMER_ADVANCE_RECEIPT'  THEN 'Customer Advance'\n            WHEN 'CUSTOMER_CHEQUE_PASS'      THEN 'Customer Cheque Realized'\n            WHEN 'CUSTOMER_CHEQUE_RETURN'    THEN 'Customer Cheque Returned'\n            WHEN 'HP_DOWN_PAYMENT'           THEN 'HP Down Payment'\n            WHEN 'HP_AGREEMENT'              THEN 'HP Down Payment'\n            WHEN 'HP_INSTALLMENT'            THEN 'HP Installment'\n            WHEN 'HP_PENALTY'                THEN 'HP Penalty'\n            WHEN 'HP_RETURN_REFUND'          THEN 'HP Return Refund'\n            WHEN 'SALE_RETURN'               THEN 'Sales Return Refund'\n            WHEN 'SALE_RETURN_REFUND'        THEN 'Sales Return Refund'\n            WHEN 'SERVICE_CUSTOMER_PAYMENT'  THEN 'Service Payment'\n            WHEN 'SERVICE_INVOICE'           THEN 'Service Payment'\n            WHEN 'SERVICE_SUPPLIER_PAYMENT'  THEN 'Service Supplier Payment'\n            WHEN 'SUPPLIER_PAYMENT'          THEN 'Supplier Payment'\n            WHEN 'PURCHASE_PAYMENT'          THEN 'Supplier Payment'\n            WHEN 'SUPPLIER_CHEQUE_PASS'      THEN 'Supplier Cheque Realized'\n            WHEN 'PAYMENT_VOUCHER'           THEN 'Payment Voucher'\n            WHEN 'EXPENSE'                   THEN 'Expenses'\n            WHEN 'BANK_ENTRY'                THEN 'Bank Deposit / Withdrawal'\n            ELSE REPLACE(t.trance_type, '_', ' ')\n        END                                                   AS details,\n        SUM(t.dr_amount)                                      AS cash_in,\n        SUM(t.cr_amount)                                      AS cash_out,\n        SUM(t.dr_amount - t.cr_amount)                        AS net\n    FROM t_account_trans t\n    WHERE t.BC = :bc\n      AND t.AccCode = :account\n      AND t.Ddate BETWEEN :from AND :to\n    GROUP BY details\n) cash\nORDER BY sort_group, details;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "account",
+            "label": "Account",
+            "type": "select",
+            "required": true,
+            "default": "1001 - Cash in Hand",
+            "source": "cash_accounts",
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "details",
+            "label": "Details",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "cash_in",
+            "label": "Cash In",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "cash_out",
+            "label": "Cash Out",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "net",
+            "label": "Net",
+            "align": "left",
+            "format": "money",
+            "total": true
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 5
+}

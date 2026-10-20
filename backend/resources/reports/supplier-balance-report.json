@@ -1,0 +1,172 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "supplier-balance-report",
+    "name": "Supplier Balance Report",
+    "category": "Supplier",
+    "description": null,
+    "sql_query": "SELECT\n    s.Code                                                        AS supplier_code,\n    s.name                                                        AS supplier_name,\n    s.phone,\n    CONCAT(UPPER(LEFT(s.type, 1)), SUBSTRING(s.type, 2))          AS type,\n    COALESCE(p.open_grns, 0)                                      AS open_grns,\n    COALESCE(p.purchase_value, 0)                                 AS purchase_value,\n    COALESCE(p.purchase_paid, 0)                                  AS purchase_paid,\n    COALESCE(p.purchase_due, 0)                                   AS purchase_due,\n    COALESCE(r.repair_due, 0)                                     AS repair_due,\n    COALESCE(p.purchase_due, 0) + COALESCE(r.repair_due, 0)       AS total_due,\n    NULLIF(LEAST(COALESCE(p.oldest_grn, '9999-12-31'), COALESCE(r.oldest_repair, '9999-12-31')), '9999-12-31') AS oldest_due_date,\n    DATEDIFF(CURDATE(), LEAST(COALESCE(p.oldest_grn, '9999-12-31'), COALESCE(r.oldest_repair, '9999-12-31'))) AS oldest_due_days\nFROM suppliers s\nLEFT JOIN (\n    -- Unpaid / part-paid GRNs\n    SELECT supplier_code,\n           COUNT(*)                         AS open_grns,\n           SUM(Net_Amount)                  AS purchase_value,\n           SUM(paid_amount)                 AS purchase_paid,\n           SUM(Net_Amount - paid_amount)    AS purchase_due,\n           MIN(Invoice_date)                AS oldest_grn\n    FROM t_purchases_sums\n    WHERE BC = :bc\n      AND Net_Amount - paid_amount > 0.009\n    GROUP BY supplier_code\n) p ON p.supplier_code = s.Code\nLEFT JOIN (\n    -- Repairs received back from the supplier but not fully paid\n    SELECT supplier_code,\n           SUM(repair_cost - paid_amount)   AS repair_due,\n           MIN(COALESCE(received_date, dispatch_date)) AS oldest_repair\n    FROM t_service_dispatches\n    WHERE BC = :bc\n      AND status = 'received_back'\n      AND repair_cost - paid_amount > 0.009\n    GROUP BY supplier_code\n) r ON r.supplier_code = s.Code\nWHERE s.BC = :bc\n  AND (:supplier IS NULL OR s.Code = :supplier)\n  AND (:type     IS NULL OR s.type = :type)\n  AND (COALESCE(:show, 'due') = 'all'\n       OR COALESCE(p.purchase_due, 0) + COALESCE(r.repair_due, 0) > 0.009)\nORDER BY total_due DESC, s.name;",
+    "parameters": [
+        {
+            "name": "supplier",
+            "label": "Supplier",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "suppliers",
+            "options": []
+        },
+        {
+            "name": "type",
+            "label": "Type",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "list",
+            "options": [
+                {
+                    "value": "normal",
+                    "label": "Normal"
+                },
+                {
+                    "value": "service",
+                    "label": "Service"
+                }
+            ]
+        },
+        {
+            "name": "show",
+            "label": "Show",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "list",
+            "options": [
+                {
+                    "value": "due",
+                    "label": "Suppliers with balance"
+                },
+                {
+                    "value": "all",
+                    "label": "All suppliers"
+                }
+            ]
+        }
+    ],
+    "columns": [
+        {
+            "key": "supplier_code",
+            "label": "Supplier Code",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "supplier_name",
+            "label": "Supplier Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "phone",
+            "label": "Phone",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "type",
+            "label": "Type",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "open_grns",
+            "label": "Open Grns",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "purchase_value",
+            "label": "Purchase Value",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "purchase_paid",
+            "label": "Purchase Paid",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "purchase_due",
+            "label": "Purchase Due",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "repair_due",
+            "label": "Repair Due",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "total_due",
+            "label": "Total Due",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "oldest_due_date",
+            "label": "Oldest Due Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "oldest_due_days",
+            "label": "Oldest Due Days",
+            "align": "right",
+            "format": "number",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 3
+}

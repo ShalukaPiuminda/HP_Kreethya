@@ -1,0 +1,166 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "stock-report",
+    "name": "Stock Report",
+    "category": "Stock Reports",
+    "description": null,
+    "sql_query": "SELECT\n    i.item_code,\n    i.item_description,\n    c.name                                                              AS category_name,\n    b.name                                                              AS brand_name,\n    COALESCE(stk.opening_qty, 0)                                       AS opening_qty,\n    COALESCE(stk.qty_in, 0)                                            AS qty_in,\n    COALESCE(stk.qty_out, 0)                                           AS qty_out,\n    COALESCE(stk.closing_qty, 0)                                       AS closing_qty,\n    i.reorder_level,\n    CASE\n        WHEN COALESCE(stk.closing_qty, 0) <= 0 \n            THEN 'Out of Stock'\n        WHEN i.reorder_level > 0 AND COALESCE(stk.closing_qty, 0) <= i.reorder_level \n            THEN 'Reorder Alert'\n        ELSE 'In Stock'\n    END AS stock_status\nFROM items i\nLEFT JOIN categories c ON c.id = i.category_id\nLEFT JOIN m_brands b ON b.id = i.brand_id\nLEFT JOIN (\n    SELECT\n        m.item_code,\n        SUM(CASE WHEN :from IS NOT NULL AND m.dDate < :from THEN m.qun_in - m.qun_out ELSE 0 END) AS opening_qty,\n        SUM(CASE WHEN (:from IS NULL OR m.dDate >= :from) AND (:to IS NULL OR m.dDate <= :to) THEN m.qun_in ELSE 0 END) AS qty_in,\n        SUM(CASE WHEN (:from IS NULL OR m.dDate >= :from) AND (:to IS NULL OR m.dDate <= :to) THEN m.qun_out ELSE 0 END) AS qty_out,\n        SUM(CASE WHEN :to IS NULL OR m.dDate <= :to THEN m.qun_in - m.qun_out ELSE 0 END) AS closing_qty\n    FROM t_item_movements m\n    WHERE m.BC = :bc\n      AND (:store_id IS NULL OR m.store_id = :store_id)\n      AND (:to IS NULL OR m.dDate <= :to)\n    GROUP BY m.item_code\n) stk ON stk.item_code = i.item_code\nWHERE i.BC = :bc\n  AND (:category IS NULL OR i.category_id = :category OR c.parent_id = :category)\n  AND (:brand_id IS NULL OR i.brand_id = :brand_id)\n  AND (:search IS NULL OR i.item_code LIKE CONCAT('%', :search, '%')\n                       OR i.item_description LIKE CONCAT('%', :search, '%'))\n  AND (\n      :stock_status IS NULL\n      OR :stock_status = ''\n      OR :stock_status = 'ALL'\n      OR (:stock_status = 'IN_STOCK' AND COALESCE(stk.closing_qty, 0) > 0)\n      OR (:stock_status = 'OUT_OF_STOCK' AND COALESCE(stk.closing_qty, 0) <= 0)\n      OR (:stock_status = 'REORDER' AND i.reorder_level > 0 AND COALESCE(stk.closing_qty, 0) <= i.reorder_level)\n  )\nORDER BY i.item_code;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "store_id",
+            "label": "Store",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "stores",
+            "options": []
+        },
+        {
+            "name": "category",
+            "label": "Category",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "categories",
+            "options": []
+        },
+        {
+            "name": "brand_id",
+            "label": "Brand",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "brands",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "stock_status",
+            "label": "Stock Status",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "item_code",
+            "label": "Item Code",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "item_description",
+            "label": "Item Description",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "category_name",
+            "label": "Category Name",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "brand_name",
+            "label": "Brand Name",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "opening_qty",
+            "label": "Opening Qty",
+            "align": "right",
+            "format": "number"
+        },
+        {
+            "key": "qty_in",
+            "label": "Qty In",
+            "align": "right",
+            "format": "number"
+        },
+        {
+            "key": "qty_out",
+            "label": "Qty Out",
+            "align": "right",
+            "format": "number"
+        },
+        {
+            "key": "closing_qty",
+            "label": "Closing Qty",
+            "align": "right",
+            "format": "number"
+        },
+        {
+            "key": "reorder_level",
+            "label": "Reorder Level",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "stock_status",
+            "label": "Stock Status",
+            "align": "left",
+            "format": "text"
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 1
+}

@@ -1,0 +1,119 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "customer-history-report",
+    "name": "Customer History Report",
+    "category": "Customer",
+    "description": null,
+    "sql_query": "WITH cus AS (\n    SELECT Code, NIC FROM customers WHERE BC = :bc AND Code = :customer\n),\ntx AS (\n    -- Sales invoice (charge)\n    SELECT s.Invoice_date AS tx_date, 1 AS seq, s.Invoice_no AS ref_no, 'Sales Invoice' AS tx_type,\n           (SELECT GROUP_CONCAT(CONCAT(d.Item_description, ' x', d.QTY) SEPARATOR ', ')\n              FROM t_invoice_deils d WHERE d.Invoice_no = s.Invoice_no) AS description,\n           s.Net_Amount AS debit, 0 AS credit\n    FROM t_invoice_sums s JOIN cus ON cus.Code = s.customer_code\n    WHERE s.BC = :bc\n\n    -- Paid at the time of sale (advances are counted when they are received)\n    UNION ALL\n    SELECT s.Invoice_date, 2, s.Invoice_no, 'Payment at Sale',\n           CONCAT_WS(', ',\n               IF(s.Cash_Pay      > 0, CONCAT('Cash ', FORMAT(s.Cash_Pay, 2)), NULL),\n               IF(s.card_payment  > 0, CONCAT('Card ', FORMAT(s.card_payment, 2)), NULL),\n               IF(s.Cheque        > 0, CONCAT('Cheque ', FORMAT(s.Cheque, 2)), NULL),\n               IF(s.bank_transfer > 0, CONCAT('Bank ', FORMAT(s.bank_transfer, 2)), NULL),\n               IF(s.advance_applied > 0, CONCAT('Advance used ', FORMAT(s.advance_applied, 2)), NULL)),\n           0, s.Cash_Pay + s.card_payment + s.Cheque + s.bank_transfer\n    FROM t_invoice_sums s JOIN cus ON cus.Code = s.customer_code\n    WHERE s.BC = :bc AND s.Cash_Pay + s.card_payment + s.Cheque + s.bank_transfer + s.advance_applied > 0\n\n    -- Later payments against invoices\n    UNION ALL\n    SELECT p.Payment_date, 3, p.Payment_no, 'Customer Payment',\n           CONCAT_WS(' - ',\n               (SELECT CONCAT('For ', GROUP_CONCAT(a.sales_invoice_no SEPARATOR ', '))\n                  FROM t_customer_invoice_payments a WHERE a.payment_no = p.Payment_no),\n               NULLIF(p.Payment_note, '')),\n           0, p.Payment_Amount\n    FROM t_customer_payments p JOIN cus ON cus.NIC = p.Customer_NIC\n    WHERE p.BC = :bc\n\n    -- Advance payments received\n    UNION ALL\n    SELECT v.payment_date, 3, v.payment_no, 'Advance Payment', v.payment_note, 0, v.amount\n    FROM t_advanc_cus_payments v JOIN cus ON cus.NIC = v.customer_nic\n    WHERE v.BC = :bc\n\n    -- Sales returns (credit to the account; cash refunds shown in the description)\n    UNION ALL\n    SELECT r.return_date, 4, r.return_no, 'Sales Return',\n           CONCAT('Invoice ', r.invoice_no,\n                  IF(r.refund_amount > 0, CONCAT(' - refunded ', FORMAT(r.refund_amount, 2), ' (', r.refund_method, ')'), '')),\n           0, r.credit_adjustment\n    FROM t_sales_return_sums r JOIN cus ON cus.NIC = r.customer_nic\n    WHERE r.BC = :bc AND r.status = 'posted'\n\n    -- Hire purchase agreement (full contract amount incl. interest and charges)\n    UNION ALL\n    SELECT h.invoice_date, 1, h.invoice_no, IF(h.is_opening = 1, 'HP Agreement (Opening)', 'HP Agreement'),\n           CONCAT('Agreement ', h.agreement_no, ' - ',\n                  (SELECT GROUP_CONCAT(CONCAT(d.item_description, ' x', d.qty) SEPARATOR ', ')\n                     FROM t_hire_purchase_details d WHERE d.invoice_no = h.invoice_no),\n                  ' - ', h.no_of_instalment, ' x ', FORMAT(h.instalment_amount, 2)),\n           h.contract_amount, 0\n    FROM t_hire_purchase_sums h JOIN cus ON cus.Code = h.customer_code\n    WHERE h.BC = :bc\n\n    -- HP down payment, or the amount already paid before an opening agreement was entered\n    UNION ALL\n    SELECT h.invoice_date, 2, h.invoice_no,\n           IF(h.is_opening = 1, 'Paid Before Opening', 'HP Down Payment'),\n           CONCAT('Agreement ', h.agreement_no),\n           0,\n           IF(h.is_opening = 1,\n              h.contract_amount - h.outstanding_amount\n                  - COALESCE((SELECT SUM(p.principal_amount + p.discount_amount)\n                                FROM t_hp_installment_payments p\n                               WHERE p.invoice_no = h.invoice_no AND p.status = 'posted'), 0),\n              h.down_payment)\n    FROM t_hire_purchase_sums h JOIN cus ON cus.Code = h.customer_code\n    WHERE h.BC = :bc AND (h.is_opening = 1 OR h.down_payment > 0)\n\n    -- HP installment collections (penalty is charged; principal + discount reduce the balance)\n    UNION ALL\n    SELECT p.payment_date, 3, p.payment_no, 'HP Installment',\n           CONCAT('Agreement ', h.agreement_no, ' - inst. #', i.instalment_no,\n                  IF(p.penalty_amount  > 0, CONCAT(' - penalty ', FORMAT(p.penalty_amount, 2)), ''),\n                  IF(p.discount_amount > 0, CONCAT(' - discount ', FORMAT(p.discount_amount, 2)), '')),\n           p.penalty_amount, p.total_amount + p.discount_amount\n    FROM t_hp_installment_payments p\n    JOIN t_hire_purchase_sums h ON h.invoice_no = p.invoice_no\n    JOIN cus ON cus.Code = h.customer_code\n    LEFT JOIN t_instalments i ON i.id = p.instalment_id\n    WHERE p.BC = :bc AND p.status = 'posted'\n\n    -- HP converted to a cash sale (settlement + amount written off as discount)\n    UNION ALL\n    SELECT c.conversion_date, 3, c.conversion_no, 'HP Cash Conversion',\n           CONCAT('Agreement ', c.agreement_no, ' - settled ', FORMAT(c.amount, 2),\n                  IF(c.due_amount_as_discount + c.discount > 0, CONCAT(', discount ', FORMAT(c.due_amount_as_discount + c.discount, 2)), '')),\n           0, c.amount + c.due_amount_as_discount + c.discount\n    FROM t_hire_purchase_to_sales c\n    JOIN t_hire_purchase_sums h ON h.invoice_no = c.invoice_no\n    JOIN cus ON cus.Code = h.customer_code\n    WHERE c.BC = :bc\n\n    -- HP returns (outstanding written off; refunds shown in the description)\n    UNION ALL\n    SELECT hr.return_date, 4, hr.hpreturn_code, 'HP Return',\n           CONCAT('Agreement ', hr.agreement_no,\n                  IF(hr.refund_amount > 0, CONCAT(' - refunded ', FORMAT(hr.refund_amount, 2)), '')),\n           0, hr.outstanding_written_off\n    FROM t_hire_purchase_return_sums hr JOIN cus ON cus.NIC = hr.customer_nic\n    WHERE hr.bc = :bc AND hr.status = 'posted'\n),\nhistory AS (\n    SELECT tx.*,\n           SUM(debit - credit) OVER (ORDER BY tx_date, seq, ref_no ROWS UNBOUNDED PRECEDING) AS balance\n    FROM tx\n)\nSELECT tx_date, tx_type, ref_no, description, debit, credit, balance\nFROM (\n    -- Opening balance (only when a From date is chosen)\n    SELECT 0 AS grp, :from AS tx_date, 0 AS seq, '' AS ref_no, 'Opening Balance' AS tx_type, '' AS description,\n           GREATEST(COALESCE(SUM(debit - credit), 0), 0) AS debit,\n           GREATEST(COALESCE(SUM(credit - debit), 0), 0) AS credit,\n           COALESCE(SUM(debit - credit), 0) AS balance\n    FROM tx\n    WHERE tx_date < :from\n    HAVING :from IS NOT NULL\n\n    UNION ALL\n    SELECT 1, tx_date, seq, ref_no, tx_type, description, debit, credit, balance\n    FROM history\n    WHERE (:from IS NULL OR tx_date >= :from)\n      AND (:to   IS NULL OR tx_date <= :to)\n) statement\nORDER BY grp, tx_date, seq, ref_no;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "customer",
+            "label": "Customer",
+            "type": "select",
+            "required": true,
+            "default": null,
+            "source": "customers",
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "tx_date",
+            "label": "Tx Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "tx_type",
+            "label": "Tx Type",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "ref_no",
+            "label": "Ref No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "description",
+            "label": "Description",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "debit",
+            "label": "Debit",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "credit",
+            "label": "Credit",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "balance",
+            "label": "Balance",
+            "align": "right",
+            "format": "money",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 1
+}

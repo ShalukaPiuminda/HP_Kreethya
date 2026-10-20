@@ -1,0 +1,167 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "sales-summary-report",
+    "name": "Sales Summary Report",
+    "category": "Sales & Hire Purchase",
+    "description": null,
+    "sql_query": "SELECT\n    h.Invoice_no                         AS invoice_no,\n    h.Invoice_date                       AS invoice_date,\n    h.Customer_NIC                       AS customer_nic,\n    h.Customer_Name                      AS customer_name,\n    h.Gross_Amount                       AS gross_amount,\n    h.Discount                           AS discount,\n    h.Net_Amount                         AS net_amount,\n    h.Cash_Pay                           AS cash_pay,\n    h.Credite                            AS credite,\n    h.Cheque                             AS cheque\nFROM t_invoice_sums h\nWHERE h.BC = :bc\n  AND h.Invoice_date BETWEEN :from AND :to\n  AND (:store_id    IS NULL OR h.store_id      = :store_id)\n  AND (:salesman_id IS NULL OR h.salesman_id   = :salesman_id)\n  AND (:customer    IS NULL OR h.customer_code = :customer)\n  AND (:search      IS NULL OR h.Invoice_no    LIKE CONCAT('%', :search, '%')\n                            OR h.Customer_NIC  LIKE CONCAT('%', :search, '%')\n                            OR h.Customer_Name LIKE CONCAT('%', :search, '%'))\nORDER BY h.Invoice_date, h.Invoice_no;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "store_id",
+            "label": "Store",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "stores",
+            "options": []
+        },
+        {
+            "name": "salesman_id",
+            "label": "Salesman",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "salesmen",
+            "options": []
+        },
+        {
+            "name": "customer",
+            "label": "Customer",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "customers",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "invoice_no",
+            "label": "Invoice No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "invoice_date",
+            "label": "Invoice Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "customer_nic",
+            "label": "Customer Nic",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "customer_name",
+            "label": "Customer Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "gross_amount",
+            "label": "Gross Amount",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "discount",
+            "label": "Discount",
+            "align": "right",
+            "format": "number",
+            "total": true
+        },
+        {
+            "key": "net_amount",
+            "label": "Net Amount",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "cash_pay",
+            "label": "Cash Pay",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "credite",
+            "label": "Credite",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "cheque",
+            "label": "Cheque",
+            "align": "right",
+            "format": "money",
+            "total": true
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 3
+}

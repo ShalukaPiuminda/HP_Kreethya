@@ -1,0 +1,89 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "profit-lost-report-pl",
+    "name": "Profit & Lost Report (P&L)",
+    "category": "Financial",
+    "description": null,
+    "sql_query": "WITH pl AS (\n    -- ── Revenue ──────────────────────────────────────────────\n    SELECT 10 AS sort_order, 'Revenue' AS section, 'Sales' AS particulars,\n           COALESCE(SUM(s.Net_Amount), 0) AS amount\n    FROM t_invoice_sums s\n    WHERE s.BC = :bc AND s.Invoice_date BETWEEN :from AND :to\n\n    UNION ALL\n    SELECT 11, 'Revenue', 'Less: Sales Returns', -COALESCE(SUM(r.net_amount), 0)\n    FROM t_sales_return_sums r\n    WHERE r.BC = :bc AND r.return_date BETWEEN :from AND :to\n\n    UNION ALL\n    SELECT 12, 'Revenue', 'Hire Purchase Sales', COALESCE(SUM(h.net_amount), 0)\n    FROM t_hire_purchase_sums h\n    WHERE h.BC = :bc AND h.invoice_date BETWEEN :from AND :to AND h.is_opening = 0\n\n    UNION ALL\n    SELECT 13, 'Revenue', 'Less: Hire Purchase Returns', -COALESCE(SUM(hr.net_amount), 0)\n    FROM t_hire_purchase_return_sums hr\n    WHERE hr.bc = :bc AND hr.return_date BETWEEN :from AND :to\n\n    -- ── Cost of sales (purchase price of the batch sold, else the item's standard cost) ──\n    UNION ALL\n    SELECT 20, 'Cost of Sales', 'Cost of Goods Sold - Sales',\n           -COALESCE(SUM(d.QTY * COALESCE(ib.purchase_price, i.standard_purchase_price, 0)), 0)\n    FROM t_invoice_deils d\n    JOIN t_invoice_sums s     ON s.Invoice_no = d.Invoice_no\n    LEFT JOIN items i         ON i.item_code  = d.Item_code\n    LEFT JOIN item_batches ib ON ib.batch_no = d.batch_no AND ib.item_code = d.Item_code AND ib.store_id = d.store_id\n    WHERE s.BC = :bc AND s.Invoice_date BETWEEN :from AND :to\n\n    UNION ALL\n    SELECT 21, 'Cost of Sales', 'Less: Cost of Sales Returns',\n           COALESCE(SUM(rd.qty * COALESCE(ib.purchase_price, i.standard_purchase_price, 0)), 0)\n    FROM t_sales_return_details rd\n    JOIN t_sales_return_sums r ON r.return_no = rd.return_no\n    LEFT JOIN items i          ON i.item_code = rd.item_code\n    LEFT JOIN item_batches ib  ON ib.batch_no = rd.batch_no AND ib.item_code = rd.item_code AND ib.store_id = rd.store_id\n    WHERE r.BC = :bc AND r.return_date BETWEEN :from AND :to\n\n    UNION ALL\n    SELECT 22, 'Cost of Sales', 'Cost of Goods Sold - Hire Purchase',\n           -COALESCE(SUM(d.qty * COALESCE(ib.purchase_price, i.standard_purchase_price, 0)), 0)\n    FROM t_hire_purchase_details d\n    JOIN t_hire_purchase_sums h ON h.invoice_no = d.invoice_no\n    LEFT JOIN items i           ON i.item_code  = d.item_code\n    LEFT JOIN item_batches ib   ON ib.batch_no = d.batch_no AND ib.item_code = d.item_code AND ib.store_id = d.store_id\n    WHERE h.BC = :bc AND h.invoice_date BETWEEN :from AND :to AND h.is_opening = 0\n\n    UNION ALL\n    SELECT 23, 'Cost of Sales', 'Less: Cost of Hire Purchase Returns',\n           COALESCE(SUM(rd.qty * COALESCE(ib.purchase_price, i.standard_purchase_price, 0)), 0)\n    FROM t_hire_purchase_return_details rd\n    JOIN t_hire_purchase_return_sums hr ON hr.hpreturn_code = rd.hpreturn_code\n    LEFT JOIN items i                   ON i.item_code = rd.item_code\n    LEFT JOIN item_batches ib           ON ib.batch_no = rd.batch_no AND ib.item_code = rd.item_code AND ib.store_id = rd.store_id\n    WHERE hr.bc = :bc AND hr.return_date BETWEEN :from AND :to\n\n    -- ── Other income: every Income account except Sales Income (taken from documents above) ──\n    UNION ALL\n    SELECT 40, 'Other Income', a.description, SUM(t.cr_amount - t.dr_amount)\n    FROM t_account_trans t\n    JOIN m_chartof_accounts a    ON a.code = t.AccCode\n    JOIN m_main_account_types ty ON ty.id  = a.type_id\n    JOIN m_main_categories mc    ON mc.id  = ty.category_id\n    WHERE t.BC = :bc AND t.Ddate BETWEEN :from AND :to\n      AND mc.name = 'Income' AND t.AccCode <> '4002'\n    GROUP BY a.code, a.description\n\n    -- ── Expenses: every Expenses account ──\n    UNION ALL\n    SELECT 50, 'Expenses', a.description, -SUM(t.dr_amount - t.cr_amount)\n    FROM t_account_trans t\n    JOIN m_chartof_accounts a    ON a.code = t.AccCode\n    JOIN m_main_account_types ty ON ty.id  = a.type_id\n    JOIN m_main_categories mc    ON mc.id  = ty.category_id\n    WHERE t.BC = :bc AND t.Ddate BETWEEN :from AND :to\n      AND mc.name = 'Expenses'\n    GROUP BY a.code, a.description\n)\nSELECT section, particulars, amount, subtotal\nFROM (\n    SELECT sort_order, section, particulars, amount, NULL AS subtotal FROM pl\n    UNION ALL\n    SELECT 30, 'Gross Profit', 'Gross Profit', NULL, SUM(amount) FROM pl WHERE sort_order < 30\n    UNION ALL\n    SELECT 45, 'Other Income', 'Total Other Income', NULL, COALESCE(SUM(amount), 0) FROM pl WHERE sort_order = 40\n    UNION ALL\n    SELECT 55, 'Expenses', 'Total Expenses', NULL, COALESCE(SUM(amount), 0) FROM pl WHERE sort_order = 50\n    UNION ALL\n    SELECT 60, 'Net Profit', CASE WHEN SUM(amount) >= 0 THEN 'Net Profit' ELSE 'Net Loss' END, NULL, SUM(amount) FROM pl\n) statement\nORDER BY sort_order, particulars;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "section",
+            "label": "Section",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "particulars",
+            "label": "Particulars",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "subtotal",
+            "label": "Subtotal",
+            "align": "right",
+            "format": "money",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 6
+}

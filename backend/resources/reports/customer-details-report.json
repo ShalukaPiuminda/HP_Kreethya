@@ -1,0 +1,168 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "customer-details-report",
+    "name": "Customer Details report",
+    "category": "Customer",
+    "description": null,
+    "sql_query": "SELECT\n    c.Code                                                   AS customer_code,\n    c.name                                                   AS customer_name,\n    c.NIC                                                    AS nic,\n    c.phone,\n    REPLACE(REPLACE(c.address, '\\r', ''), '\\n', ', ')        AS address,\n    DATE(c.created_at)                                       AS registered_date,\n    COALESCE(s.invoices, 0)                                  AS sales_invoices,\n    COALESCE(s.sales_value, 0)                               AS sales_value,\n    COALESCE(h.agreements, 0)                                AS hp_agreements,\n    COALESCE(h.active_agreements, 0)                         AS active_hp,\n    COALESCE(h.hp_value, 0)                                  AS hp_value,\n    COALESCE(s.sales_value, 0) + COALESCE(h.hp_value, 0)     AS total_business,\n    c.advance_balance,\n    NULLIF(GREATEST(COALESCE(s.last_invoice, '1900-01-01'), COALESCE(h.last_agreement, '1900-01-01')), '1900-01-01') AS last_purchase_date\nFROM customers c\nLEFT JOIN (\n    SELECT customer_code, COUNT(*) AS invoices, SUM(Net_Amount) AS sales_value, MAX(Invoice_date) AS last_invoice\n    FROM t_invoice_sums\n    WHERE BC = :bc\n    GROUP BY customer_code\n) s ON s.customer_code = c.Code\nLEFT JOIN (\n    SELECT customer_code,\n           COUNT(*) AS agreements,\n           SUM(status = 'active') AS active_agreements,\n           SUM(net_amount) AS hp_value,\n           MAX(invoice_date) AS last_agreement\n    FROM t_hire_purchase_sums\n    WHERE BC = :bc\n    GROUP BY customer_code\n) h ON h.customer_code = c.Code\nWHERE c.BC = :bc\n  AND (:registered_from IS NULL OR DATE(c.created_at) >= :registered_from)\n  AND (:registered_to   IS NULL OR DATE(c.created_at) <= :registered_to)\n  AND (:search IS NULL OR c.Code    LIKE CONCAT('%', :search, '%')\n                       OR c.name    LIKE CONCAT('%', :search, '%')\n                       OR c.NIC     LIKE CONCAT('%', :search, '%')\n                       OR c.phone   LIKE CONCAT('%', :search, '%')\n                       OR c.address LIKE CONCAT('%', :search, '%'))\nORDER BY c.Code;",
+    "parameters": [
+        {
+            "name": "registered_from",
+            "label": "Registered From",
+            "type": "date",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "registered_to",
+            "label": "Registered To",
+            "type": "date",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "customer_code",
+            "label": "Customer Code",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "customer_name",
+            "label": "Customer Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "nic",
+            "label": "Nic",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "phone",
+            "label": "Phone",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "address",
+            "label": "Address",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "registered_date",
+            "label": "Registered Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "sales_invoices",
+            "label": "Sales Invoices",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "sales_value",
+            "label": "Sales Value",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "hp_agreements",
+            "label": "Hp Agreements",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "active_hp",
+            "label": "Active Hp",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "hp_value",
+            "label": "Hp Value",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "total_business",
+            "label": "Total Business",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "advance_balance",
+            "label": "Advance Balance",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "last_purchase_date",
+            "label": "Last Purchase Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 0
+}

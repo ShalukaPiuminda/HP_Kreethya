@@ -1,0 +1,98 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "supplier-details",
+    "name": "Supplier Details",
+    "category": "Supplier",
+    "description": null,
+    "sql_query": "SELECT\n    s.name,\n    REPLACE(REPLACE(s.address, '\\r', ''), '\\n', ', ')         AS address,\n    s.phone,\n    CASE s.type\n        WHEN 'normal'  THEN 'Normal'\n        WHEN 'service' THEN 'Service'\n        ELSE s.type\n    END                                                        AS type\nFROM suppliers s\nWHERE s.BC = :bc\n  AND (:type   IS NULL OR s.type = :type)\n  AND (:search IS NULL OR s.name    LIKE CONCAT('%', :search, '%')\n                       OR s.phone   LIKE CONCAT('%', :search, '%')\n                       OR s.address LIKE CONCAT('%', :search, '%'))\nORDER BY s.name;",
+    "parameters": [
+        {
+            "name": "type",
+            "label": "Type",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "list",
+            "options": [
+                {
+                    "value": "normal",
+                    "label": "Normal"
+                },
+                {
+                    "value": "service",
+                    "label": "Service"
+                }
+            ]
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "name",
+            "label": "Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "address",
+            "label": "Address",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "phone",
+            "label": "Phone",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "type",
+            "label": "Type",
+            "align": "left",
+            "format": "text",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 0
+}
