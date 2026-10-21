@@ -37,6 +37,7 @@ import { ChequeEntryFields } from '@/components/cheque-entry-fields';
 import type { ChequeBank, PaymentOptions } from '@/lib/payment-options';
 import { PHONE_PATTERN, PHONE_TITLE } from '@/lib/phone';
 import { SearchSelect } from '@/components/search-select';
+import { ItemFormModal, type Item, type ItemFormState } from '@/components/item-form-modal';
 import { ScanInput } from '@/components/scan-input';
 import { findItemByScan } from '@/lib/barcode';
 
@@ -149,6 +150,23 @@ function focusNextSerialInput(event: React.KeyboardEvent<HTMLInputElement>) {
 
 type ScanOutcome = { type: 'success' | 'error'; message: string };
 
+/** Puts an item on a line and resets its prices and tracking details to that item's defaults. */
+function applyItemToLine(
+  line: ReceiptLineForm,
+  itemCode: string,
+  item: PurchaseItemOption | undefined
+): ReceiptLineForm {
+  return {
+    ...line,
+    item_code: itemCode,
+    unit_price: String(numeric(item?.standard_purchase_price)),
+    sales_price: String(numeric(item?.standard_sales_price)),
+    pricing_mode: (item?.default_batch_price_mode as BatchPricingMode | undefined) ?? 'batch',
+    batch_no: '',
+    serial_numbers: '',
+  };
+}
+
 function discountAmount(baseAmount: number, value: string, type: DiscountType): number {
   const discountValue = numeric(value);
 
@@ -166,6 +184,7 @@ export default function PurchasesPage() {
   const canCreate = hasPermission('purchases', 'can_create');
   const canCreateSupplier = hasPermission('suppliers', 'can_create');
   const canCreateStore = hasPermission('stores', 'can_create');
+  const canCreateItem = hasPermission('items', 'can_create');
 
   const [receipts, setReceipts] = useState<PurchaseReceipt[]>([]);
   const [openOrders, setOpenOrders] = useState<PurchaseOrder[]>([]);
@@ -180,6 +199,10 @@ export default function PurchasesPage() {
   const [quickStoreOpen, setQuickStoreOpen] = useState(false);
   const [quickSupplier, setQuickSupplier] = useState({ name: '', phone: '', address: '', type: 'normal' });
   const [quickStore, setQuickStore] = useState({ name: '', location: '' });
+  const [newItemLine, setNewItemLine] = useState<{
+    lineKey: number;
+    initialValues: Partial<ItemFormState>;
+  } | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -445,18 +468,38 @@ export default function PurchasesPage() {
         if (line.key !== key) return line;
         if (field !== 'item_code') return { ...line, [field]: value };
 
-        const item = items.find((candidate) => candidate.item_code === value);
-        return {
-          ...line,
-          item_code: value,
-          unit_price: String(numeric(item?.standard_purchase_price)),
-          sales_price: String(numeric(item?.standard_sales_price)),
-          pricing_mode: (item?.default_batch_price_mode as BatchPricingMode | undefined) ?? 'batch',
-          batch_no: '',
-          serial_numbers: '',
-        };
+        return applyItemToLine(line, value, items.find((candidate) => candidate.item_code === value));
       }),
     }));
+  };
+
+  /** Opens the item form from a line's item picker, pre-filled with what was searched. */
+  const openNewItem = (lineKey: number, query: string) => {
+    // A scanned or typed number is a barcode; anything else starts the description.
+    const looksLikeBarcode = /^\d{6,}$/.test(query);
+    setNewItemLine({
+      lineKey,
+      initialValues: looksLikeBarcode ? { barcode: query } : { item_description: query },
+    });
+  };
+
+  /** Adds the new item to the picker list and selects it on the line it was created from. */
+  const handleItemCreated = (saved: Item) => {
+    const lineKey = newItemLine?.lineKey;
+    setItems((current) => [...current, saved]);
+    setNewItemLine(null);
+    if (lineKey === undefined) return;
+
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((line) => (
+        line.key === lineKey ? applyItemToLine(line, saved.item_code, saved) : line
+      )),
+    }));
+    setScanNotice({
+      type: 'success',
+      message: `${saved.item_code} - ${saved.item_description} created and added. Enter the quantity and unit cost.`,
+    });
   };
 
   const addLine = () => {
@@ -925,7 +968,7 @@ export default function PurchasesPage() {
 
                   return (
                     <div key={line.key} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
                         <OperationField label="Item" required className="xl:col-span-2">
                           <SearchSelect
                             value={line.item_code}
@@ -938,6 +981,10 @@ export default function PurchasesPage() {
                             }))}
                             placeholder="Select item"
                             searchPlaceholder="Search by code, description or barcode..."
+                            createAction={canCreateItem ? {
+                              label: 'Add new item',
+                              onCreate: (query) => openNewItem(line.key, query),
+                            } : undefined}
                             className={inputClass}
                             disabled={Boolean(selectedOrder)}
                             required
@@ -977,7 +1024,7 @@ export default function PurchasesPage() {
                             required
                           />
                         </OperationField>
-                        <OperationField label="Line Discount">
+                        <OperationField label="Line Discount" className="xl:col-span-2">
                           <div className="flex min-w-0 gap-2">
                             <select value={line.discount_type} onChange={(event) => updateLine(line.key, 'discount_type', event.target.value)} className={discountTypeClass}>
                               <option value="amount">LKR</option>
@@ -1292,6 +1339,14 @@ export default function PurchasesPage() {
           </form>
         </OperationModal>
       )}
+
+      {newItemLine && (
+        <ItemFormModal
+          initialValues={newItemLine.initialValues}
+          onClose={() => setNewItemLine(null)}
+          onSaved={handleItemCreated}
+        />
+      )}
     </div>
   );
 }
@@ -1299,7 +1354,7 @@ export default function PurchasesPage() {
 const inputClass =
   'w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500';
 const discountTypeClass = `${inputClass} !w-24 shrink-0`;
-const discountAmountClass = `${inputClass} !w-auto min-w-[7.5rem] flex-1`;
+const discountAmountClass = `${inputClass} !w-auto min-w-0 flex-1`;
 
 function SummaryRow({
   label,
