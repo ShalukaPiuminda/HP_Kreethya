@@ -380,9 +380,8 @@ export default function PurchasesPage() {
       const newLine = createLineForItem(item);
       next = {
         ...current,
-        items: blank
-          ? current.items.map((line) => (line.key === blank.key ? newLine : line))
-          : [...current.items, newLine],
+        // Newest line goes on top so it stays next to the scan box and Add Line button.
+        items: [newLine, ...current.items.filter((line) => line.key !== blank?.key)],
       };
       outcome = {
         type: 'success',
@@ -463,7 +462,7 @@ export default function PurchasesPage() {
   const addLine = () => {
     setForm((current) => ({
       ...current,
-      items: [...current.items, blankReceiptLine()],
+      items: [blankReceiptLine(), ...current.items],
     }));
   };
 
