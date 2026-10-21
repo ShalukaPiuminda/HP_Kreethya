@@ -126,7 +126,7 @@ export default function SalesInvoicePrintPage() {
       </div>
 
       {/* Invoice sheet (140 x 245 mm). On screen it previews the page; in print the app shell's 8mm padding is the margin. */}
-      <article className="flex min-h-[245mm] w-[140mm] flex-col bg-white p-[8mm] text-[9px] leading-snug text-slate-950 shadow-sm ring-1 ring-slate-200 print:min-h-[228mm] print:w-full print:p-0 print:shadow-none print:ring-0">
+      <article className="flex w-[140mm] flex-col bg-white p-[8mm] text-[9px] leading-snug text-slate-950 shadow-sm ring-1 ring-slate-200 print:w-full print:p-0 print:shadow-none print:ring-0">
         <header className="grid grid-cols-[1fr_auto] items-start gap-3 border-b border-slate-300 pb-2">
           <div className="flex min-w-0 items-center gap-2.5">
             {company?.logo && (
@@ -236,7 +236,7 @@ export default function SalesInvoicePrintPage() {
           </dl>
         </section>
 
-        <section className="mt-auto grid break-inside-avoid grid-cols-3 gap-4 pt-10 text-center">
+        <section className="mt-4 grid break-inside-avoid grid-cols-3 gap-4 pt-10 text-center">
           {['Received in good condition (Customer)', 'Cashier', 'Authorized signature'].map((label) => (
             <div key={label} className="border-t border-dotted border-slate-500 pt-1 text-[8px] text-slate-700">
               {label}
