@@ -131,7 +131,7 @@ export default function SalesInvoicePrintPage() {
           <div className="flex min-w-0 items-center gap-2.5">
             {company?.logo && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={company.logo} alt="" className="h-[16mm] w-[16mm] shrink-0 object-contain" />
+              <img src={company.logo} alt="" className="h-[28mm] w-[28mm] shrink-0 object-contain" />
             )}
             <div className="min-w-0">
               <div className="text-[15px] font-black uppercase leading-tight tracking-tight">
