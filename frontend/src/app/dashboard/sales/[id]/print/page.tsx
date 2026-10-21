@@ -103,7 +103,7 @@ export default function SalesInvoicePrintPage() {
     <div className="mx-auto w-fit print:w-auto">
       <style>{`
         @media print {
-          @page { size: A5 landscape; margin: 0; }
+          @page { size: A5 portrait; margin: 0; }
           :root { --print-margin: 8mm; }
         }
       `}</style>
@@ -125,22 +125,22 @@ export default function SalesInvoicePrintPage() {
         </div>
       </div>
 
-      {/* A5 landscape sheet (210 x 148 mm). On screen it previews the page; in print the app shell's 8mm padding is the margin. */}
-      <article className="flex min-h-[148mm] w-[210mm] flex-col bg-white p-[8mm] text-[9px] leading-snug text-slate-950 shadow-sm ring-1 ring-slate-200 print:min-h-[131mm] print:w-full print:p-0 print:shadow-none print:ring-0">
-        <header className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-slate-300 pb-2">
-          <div className="flex items-center gap-4">
+      {/* A5 portrait sheet (148 x 210 mm). On screen it previews the page; in print the app shell's 8mm padding is the margin. */}
+      <article className="flex min-h-[210mm] w-[148mm] flex-col bg-white p-[8mm] text-[9px] leading-snug text-slate-950 shadow-sm ring-1 ring-slate-200 print:min-h-[193mm] print:w-full print:p-0 print:shadow-none print:ring-0">
+        <header className="grid grid-cols-[1fr_auto] items-start gap-3 border-b border-slate-300 pb-2">
+          <div className="flex min-w-0 items-center gap-2.5">
             {company?.logo && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={company.logo} alt="" className="h-[20mm] w-[20mm] shrink-0 object-contain" />
+              <img src={company.logo} alt="" className="h-[16mm] w-[16mm] shrink-0 object-contain" />
             )}
             <div className="min-w-0">
-              <div className="text-[18px] font-black uppercase leading-tight tracking-tight">
+              <div className="text-[15px] font-black uppercase leading-tight tracking-tight">
                 {company?.name || 'Hire Purchase ERP'}
               </div>
-              {address && <div className="mt-0.5 whitespace-pre-line text-[11px] text-slate-700">{address}</div>}
+              {address && <div className="mt-0.5 whitespace-pre-line text-[10px] text-slate-700">{address}</div>}
             </div>
           </div>
-          <dl className="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5 pt-1 text-[11px]">
+          <dl className="grid grid-cols-[auto_auto] gap-x-2 gap-y-0.5 pt-1 text-[9px]">
             <dt className="text-slate-500">Invoice No</dt>
             <dd className="text-right font-mono font-bold">{invoice.Invoice_no}</dd>
             <dt className="text-slate-500">Date</dt>
@@ -158,7 +158,7 @@ export default function SalesInvoicePrintPage() {
             <div>{invoice.Customer_Phone || invoice.customer?.phone || '—'}</div>
             <div className="mt-0.5 whitespace-pre-line text-slate-600">{invoice.Customer_Address || invoice.customer?.address || 'Address not captured on this invoice.'}</div>
           </div>
-          <dl className="ml-auto grid h-fit w-full max-w-[60mm] grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+          <dl className="ml-auto grid h-fit w-full max-w-[52mm] grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
             <dt className="text-slate-500">Reference</dt>
             <dd className="text-right font-semibold">{invoice.reference_no || '—'}</dd>
             <dt className="text-slate-500">Store</dt>
@@ -236,9 +236,9 @@ export default function SalesInvoicePrintPage() {
           </dl>
         </section>
 
-        <section className="mt-auto grid break-inside-avoid grid-cols-3 gap-10 pt-8 text-center">
+        <section className="mt-auto grid break-inside-avoid grid-cols-3 gap-4 pt-10 text-center">
           {['Received in good condition (Customer)', 'Cashier', 'Authorized signature'].map((label) => (
-            <div key={label} className="border-t border-dotted border-slate-500 pt-1 text-[9px] text-slate-700">
+            <div key={label} className="border-t border-dotted border-slate-500 pt-1 text-[8px] text-slate-700">
               {label}
             </div>
           ))}
