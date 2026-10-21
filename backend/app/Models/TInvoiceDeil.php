@@ -11,7 +11,7 @@ class TInvoiceDeil extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'Invoice_date' => 'date',
+        'Invoice_date' => 'date:Y-m-d',
         'store_id' => 'integer',
         'serial_numbers' => 'array',
         'QTY' => 'integer',

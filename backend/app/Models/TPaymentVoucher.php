@@ -11,7 +11,7 @@ class TPaymentVoucher extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'date' => 'date',
+        'date' => 'date:Y-m-d',
         'amount' => 'decimal:2',
         'approved_at' => 'datetime',
     ];

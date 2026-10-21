@@ -11,8 +11,8 @@ class TServiceIssue extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'issue_date' => 'date',
-        'completed_date' => 'date',
+        'issue_date' => 'date:Y-m-d',
+        'completed_date' => 'date:Y-m-d',
         'labor_charge' => 'decimal:2',
     ];
 }

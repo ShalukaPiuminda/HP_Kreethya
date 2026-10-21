@@ -11,7 +11,7 @@ class DayEndBalance extends Model
     protected $fillable = ['BC', 'close_date', 'opening_balance', 'closing_balance', 'counted_cash', 'variance', 'total_dr', 'total_cr', 'notes', 'closed_by'];
 
     protected $casts = [
-        'close_date' => 'date',
+        'close_date' => 'date:Y-m-d',
         'opening_balance' => 'decimal:2',
         'closing_balance' => 'decimal:2',
         'counted_cash' => 'decimal:2',

@@ -11,8 +11,8 @@ class TPurchaseOrderSum extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'po_date' => 'date',
-        'expected_date' => 'date',
+        'po_date' => 'date:Y-m-d',
+        'expected_date' => 'date:Y-m-d',
         'gross_amount' => 'decimal:2',
         'net_amount' => 'decimal:2',
     ];

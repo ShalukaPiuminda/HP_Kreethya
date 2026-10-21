@@ -13,6 +13,6 @@ class TCustomerAccountTrance extends Model
     protected $casts = [
         'dr_amount' => 'decimal:2',
         'cr_amount' => 'decimal:2',
-        'dDate' => 'date',
+        'dDate' => 'date:Y-m-d',
     ];
 }

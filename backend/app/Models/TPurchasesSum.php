@@ -11,7 +11,7 @@ class TPurchasesSum extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'Invoice_date' => 'date',
+        'Invoice_date' => 'date:Y-m-d',
         'Gross_Amount' => 'decimal:2',
         'Discount' => 'decimal:2',
         'discount_value' => 'decimal:2',

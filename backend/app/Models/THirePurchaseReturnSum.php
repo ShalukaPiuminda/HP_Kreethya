@@ -11,7 +11,7 @@ class THirePurchaseReturnSum extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'return_date' => 'date',
+        'return_date' => 'date:Y-m-d',
         'gross_amount' => 'decimal:2',
         'net_amount' => 'decimal:2',
         'outstanding_written_off' => 'decimal:2',

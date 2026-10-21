@@ -11,7 +11,7 @@ class TServiceInvoice extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'invoice_date' => 'date',
+        'invoice_date' => 'date:Y-m-d',
         'service_charge' => 'decimal:2',
         'supplier_repair_cost' => 'decimal:2',
         'net_payable' => 'decimal:2',

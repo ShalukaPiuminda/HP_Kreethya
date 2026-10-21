@@ -156,7 +156,7 @@ class ServiceWorkflowTest extends TestCase
         $this->assertDatabaseHas('t_service_returns', [
             'ticket_no' => $ticketNo,
             'status' => 'completed',
-            'completed_date' => '2026-06-20 00:00:00',
+            'completed_date' => '2026-06-20',
         ]);
         $this->assertDatabaseHas('t_service_invoices', [
             'invoice_no' => $invoiceNo,

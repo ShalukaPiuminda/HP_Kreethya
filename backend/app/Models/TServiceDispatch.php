@@ -11,9 +11,9 @@ class TServiceDispatch extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'dispatch_date' => 'date',
-        'estimated_return' => 'date',
-        'received_date' => 'date',
+        'dispatch_date' => 'date:Y-m-d',
+        'estimated_return' => 'date:Y-m-d',
+        'received_date' => 'date:Y-m-d',
         'repair_cost' => 'decimal:2',
         'paid_amount' => 'decimal:2',
     ];

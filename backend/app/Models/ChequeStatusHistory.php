@@ -23,7 +23,7 @@ class ChequeStatusHistory extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'action_date' => 'date',
+        'action_date' => 'date:Y-m-d',
         'created_at' => 'datetime',
     ];
 

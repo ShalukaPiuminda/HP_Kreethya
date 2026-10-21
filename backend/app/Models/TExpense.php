@@ -11,7 +11,7 @@ class TExpense extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'Expense_date' => 'date',
+        'Expense_date' => 'date:Y-m-d',
         'Expense_Amount' => 'decimal:2',
     ];
 

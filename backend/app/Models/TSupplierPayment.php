@@ -11,7 +11,7 @@ class TSupplierPayment extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'Payment_date' => 'date',
+        'Payment_date' => 'date:Y-m-d',
         'Payment_Amount' => 'decimal:2',
         'cash_payment' => 'decimal:2',
         'card_payment' => 'decimal:2',

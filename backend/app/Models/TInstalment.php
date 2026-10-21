@@ -11,8 +11,8 @@ class TInstalment extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'invoice_date' => 'date',
-        'instalment_date' => 'date',
+        'invoice_date' => 'date:Y-m-d',
+        'instalment_date' => 'date:Y-m-d',
         'instalment_amount' => 'decimal:2',
         'base_amount' => 'decimal:2',
         'amount_pay' => 'decimal:2',

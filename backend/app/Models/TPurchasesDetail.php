@@ -11,7 +11,7 @@ class TPurchasesDetail extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'Invoice_date' => 'date',
+        'Invoice_date' => 'date:Y-m-d',
         'QTY' => 'integer',
         'free_qty' => 'integer',
         'Unit_price' => 'decimal:2',
