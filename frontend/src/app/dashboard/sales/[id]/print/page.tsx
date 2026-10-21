@@ -103,7 +103,7 @@ export default function SalesInvoicePrintPage() {
     <div className="mx-auto w-fit print:w-auto">
       <style>{`
         @media print {
-          @page { size: A5 portrait; margin: 0; }
+          @page { size: 140mm 245mm; margin: 0; }
           :root { --print-margin: 8mm; }
         }
       `}</style>
@@ -125,8 +125,8 @@ export default function SalesInvoicePrintPage() {
         </div>
       </div>
 
-      {/* A5 portrait sheet (148 x 210 mm). On screen it previews the page; in print the app shell's 8mm padding is the margin. */}
-      <article className="flex min-h-[210mm] w-[148mm] flex-col bg-white p-[8mm] text-[9px] leading-snug text-slate-950 shadow-sm ring-1 ring-slate-200 print:min-h-[193mm] print:w-full print:p-0 print:shadow-none print:ring-0">
+      {/* Invoice sheet (140 x 245 mm). On screen it previews the page; in print the app shell's 8mm padding is the margin. */}
+      <article className="flex min-h-[245mm] w-[140mm] flex-col bg-white p-[8mm] text-[9px] leading-snug text-slate-950 shadow-sm ring-1 ring-slate-200 print:min-h-[228mm] print:w-full print:p-0 print:shadow-none print:ring-0">
         <header className="grid grid-cols-[1fr_auto] items-start gap-3 border-b border-slate-300 pb-2">
           <div className="flex min-w-0 items-center gap-2.5">
             {company?.logo && (
@@ -158,7 +158,7 @@ export default function SalesInvoicePrintPage() {
             <div>{invoice.Customer_Phone || invoice.customer?.phone || '—'}</div>
             <div className="mt-0.5 whitespace-pre-line text-slate-600">{invoice.Customer_Address || invoice.customer?.address || 'Address not captured on this invoice.'}</div>
           </div>
-          <dl className="ml-auto grid h-fit w-full max-w-[52mm] grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+          <dl className="ml-auto grid h-fit w-full max-w-[50mm] grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
             <dt className="text-slate-500">Reference</dt>
             <dd className="text-right font-semibold">{invoice.reference_no || '—'}</dd>
             <dt className="text-slate-500">Store</dt>
