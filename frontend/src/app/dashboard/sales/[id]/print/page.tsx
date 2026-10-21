@@ -15,6 +15,7 @@ interface CompanyProfile {
   address: string | null;
   phone: string | null;
   email: string | null;
+  logo: string | null;
 }
 
 interface BranchProfile {
@@ -30,6 +31,9 @@ interface InvoicePrintPayload {
   company: CompanyProfile | null;
   branch: BranchProfile | null;
 }
+
+/** Keeps background fills (title bar, table head) when the browser prints. */
+const PRINT_EXACT = 'print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]';
 
 export default function SalesInvoicePrintPage() {
   const params = useParams<{ id: string }>();
@@ -93,10 +97,19 @@ export default function SalesInvoicePrintPage() {
   }
 
   const { invoice, company, branch } = payload;
+  const phone = company?.phone || branch?.phone;
+  const address = company?.address || branch?.address;
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <div className="mb-5 flex items-center justify-between print:hidden">
+    <div className="mx-auto w-fit print:w-auto">
+      <style>{`
+        @media print {
+          @page { size: A5 landscape; margin: 0; }
+          :root { --print-margin: 8mm; }
+        }
+      `}</style>
+
+      <div className="mb-5 flex items-center justify-between gap-4 print:hidden">
         <Link href="/dashboard/sales" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600">
           <ArrowLeft className="h-4 w-4" />
           Sales invoices
@@ -113,37 +126,50 @@ export default function SalesInvoicePrintPage() {
         </div>
       </div>
 
-      <article className="min-h-[1100px] bg-white p-10 text-slate-950 shadow-sm ring-1 ring-slate-200 print:min-h-0 print:p-0 print:shadow-none print:ring-0">
-        <header className="flex items-start justify-between border-b-2 border-slate-900 pb-6">
-          <div>
-            <div className="text-2xl font-black tracking-tight">
-              {company?.name || 'Hire Purchase ERP'}
-            </div>
-            <div className="mt-2 space-y-1 text-sm text-slate-500">
-              {branch?.name && <div>{branch.name} {branch.bccode ? `· ${branch.bccode}` : ''}</div>}
-              {company?.address && <div>{company.address}</div>}
-              {!company?.address && branch?.address && <div>{branch.address}</div>}
-              <div>
-                {[company?.phone || branch?.phone, company?.email].filter(Boolean).join(' · ') || 'Invoice print view'}
+      {/* A5 landscape sheet (210 x 148 mm). On screen it previews the page; in print the app shell's 8mm padding is the margin. */}
+      <article className="flex min-h-[148mm] w-[210mm] flex-col bg-white p-[8mm] text-[9px] leading-snug text-slate-950 shadow-sm ring-1 ring-slate-200 print:min-h-[131mm] print:w-full print:p-0 print:shadow-none print:ring-0">
+        <header className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-slate-300 pb-3">
+          <div className="flex items-center gap-4">
+            {company?.logo && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={company.logo} alt="" className="h-[20mm] w-[20mm] shrink-0 object-contain" />
+            )}
+            <div className="min-w-0">
+              <div className="text-[18px] font-black uppercase leading-tight tracking-tight">
+                {company?.name || 'Hire Purchase ERP'}
               </div>
+              {address && <div className="mt-0.5 whitespace-pre-line text-[11px] text-slate-700">{address}</div>}
+              {(phone || company?.email) && (
+                <div className="text-[11px] text-slate-700">
+                  {[phone && `Tel: ${phone}`, company?.email && `Email: ${company.email}`].filter(Boolean).join('  ·  ')}
+                </div>
+              )}
+              {branch?.name && branch.name !== company?.name && (
+                <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
+                  {branch.name} branch{branch.bccode ? ` · ${branch.bccode}` : ''}
+                </div>
+              )}
             </div>
           </div>
-          <div className="text-right">
-            <h1 className="text-xl font-black uppercase tracking-wide">Sales Invoice</h1>
-            <div className="mt-2 font-mono text-sm">{invoice.Invoice_no}</div>
-            <div className="mt-1 text-sm text-slate-500">{displayDate(invoice.Invoice_date)}</div>
-          </div>
+          <dl className="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5 pt-1 text-[11px]">
+            <dt className="text-slate-500">Invoice No</dt>
+            <dd className="text-right font-mono font-bold">{invoice.Invoice_no}</dd>
+            <dt className="text-slate-500">Date</dt>
+            <dd className="text-right font-semibold">{displayDate(invoice.Invoice_date)}</dd>
+          </dl>
         </header>
 
-        <section className="mt-8 grid grid-cols-2 gap-8 text-sm">
-          <div>
-            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Bill To</div>
-            <div className="mt-2 text-lg font-bold">{invoice.Customer_Name || invoice.customer?.name || invoice.customer_code}</div>
+        <h1 className="mx-auto mt-2 w-fit border-b-2 border-slate-900 px-3 pb-0.5 text-[16px] font-black uppercase tracking-[0.3em]">Invoice</h1>
+
+        <section className="mt-1.5 grid grid-cols-2 items-start gap-4">
+          <div className="min-w-0">
+            <div className="text-[7px] font-bold uppercase tracking-wide text-slate-500">Customer</div>
+            <div className="mt-0.5 text-[11px] font-bold">{invoice.Customer_Name || invoice.customer?.name || invoice.customer_code}</div>
             <div>{invoice.Customer_NIC}</div>
             <div>{invoice.Customer_Phone || invoice.customer?.phone || '—'}</div>
-            <div className="mt-2 whitespace-pre-line text-slate-600">{invoice.Customer_Address || invoice.customer?.address || 'Address not captured on this invoice.'}</div>
+            <div className="mt-0.5 whitespace-pre-line text-slate-600">{invoice.Customer_Address || invoice.customer?.address || 'Address not captured on this invoice.'}</div>
           </div>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+          <dl className="ml-auto grid h-fit w-full max-w-[60mm] grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
             <dt className="text-slate-500">Reference</dt>
             <dd className="text-right font-semibold">{invoice.reference_no || '—'}</dd>
             <dt className="text-slate-500">Store</dt>
@@ -155,67 +181,81 @@ export default function SalesInvoicePrintPage() {
           </dl>
         </section>
 
-        <section className="mt-8 overflow-hidden rounded-lg border border-slate-300">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-100 text-left text-xs uppercase">
+        <section className="mt-2 overflow-hidden rounded border border-slate-300">
+          <table className="w-full table-fixed">
+            <colgroup>
+              <col />
+              <col className="w-[20%]" />
+              <col className="w-[8%]" />
+              <col className="w-[15%]" />
+              <col className="w-[13%]" />
+              <col className="w-[16%]" />
+            </colgroup>
+            <thead className={`bg-slate-100 text-left text-[7px] uppercase ${PRINT_EXACT}`}>
               <tr>
-                <th className="px-4 py-3">Item</th>
-                <th className="px-4 py-3">Batch / Serial</th>
-                <th className="px-4 py-3 text-right">Qty</th>
-                <th className="px-4 py-3 text-right">Unit price</th>
-                <th className="px-4 py-3 text-right">Discount</th>
-                <th className="px-4 py-3 text-right">Net value</th>
+                <th className="px-1.5 py-0.5">Item</th>
+                <th className="px-1.5 py-0.5">Batch / Serial</th>
+                <th className="px-1.5 py-0.5 text-right">Qty</th>
+                <th className="px-1.5 py-0.5 text-right">Unit price</th>
+                <th className="px-1.5 py-0.5 text-right">Discount</th>
+                <th className="px-1.5 py-0.5 text-right">Net value</th>
               </tr>
             </thead>
             <tbody>
               {invoice.details.map((detail) => (
-                <tr key={detail.id} className="border-t border-slate-200">
-                  <td className="px-4 py-3">
+                <tr key={detail.id} className="break-inside-avoid border-t border-slate-200 align-top">
+                  <td className="px-1.5 py-0.5">
                     <div className="font-semibold">{detail.Item_code}</div>
-                    <div className="text-xs text-slate-500">{detail.Item_description || detail.item?.item_description || '—'}</div>
+                    <div className="text-[8px] text-slate-500">{detail.Item_description || detail.item?.item_description || '—'}</div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="break-words px-1.5 py-0.5 text-[8px]">
                     {detail.serial_numbers?.join(', ') || detail.batch_no || '—'}
                   </td>
-                  <td className="px-4 py-3 text-right">{detail.QTY}</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(numeric(detail.Unit_price))}</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(numeric(detail.Discount))}</td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatCurrency(numeric(detail.Net_value))}</td>
+                  <td className="px-1.5 py-0.5 text-right">{detail.QTY}</td>
+                  <td className="px-1.5 py-0.5 text-right">{formatCurrency(numeric(detail.Unit_price))}</td>
+                  <td className="px-1.5 py-0.5 text-right">{formatCurrency(numeric(detail.Discount))}</td>
+                  <td className="px-1.5 py-0.5 text-right font-semibold">{formatCurrency(numeric(detail.Net_value))}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
 
-        <section className="mt-8 grid gap-8 md:grid-cols-[1.3fr_0.7fr]">
-          <div className="rounded-2xl border border-slate-200 p-5">
-            <h2 className="text-sm font-black uppercase tracking-wide">Payment Breakdown</h2>
-            <div className="mt-4 grid gap-2 text-sm text-slate-700">
+        <section className="mt-2 grid break-inside-avoid grid-cols-2 gap-4">
+          <div className="rounded border border-slate-200 px-2 py-1.5">
+            <h2 className="text-[8px] font-black uppercase tracking-wide">Payment Breakdown</h2>
+            <div className="mt-1 grid gap-0.5 text-slate-700">
               <div className="flex justify-between"><span>Cash</span><span className="font-semibold">{formatCurrency(numeric(invoice.Cash_Pay))}</span></div>
               <div className="flex justify-between"><span>Card</span><span className="font-semibold">{formatCurrency(numeric(invoice.card_payment))}</span></div>
               <div className="flex justify-between"><span>Cheque</span><span className="font-semibold">{formatCurrency(numeric(invoice.Cheque))}</span></div>
               <div className="flex justify-between"><span>Bank transfer</span><span className="font-semibold">{formatCurrency(numeric(invoice.bank_transfer))}</span></div>
               <div className="flex justify-between"><span>Advance applied</span><span className="font-semibold">{formatCurrency(numeric(invoice.advance_applied))}</span></div>
               {invoice.bank_account && (
-                <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                <div className="mt-1 rounded bg-slate-50 px-1.5 py-0.5 text-[8px] text-slate-500">
                   Internal bank account: {invoice.bank_account.bank_name} · {invoice.bank_account.account_no}
                 </div>
               )}
             </div>
           </div>
 
-          <section className="ml-auto w-full max-w-md">
-            <dl className="space-y-3 text-sm">
-              <div className="flex justify-between"><dt>Gross amount</dt><dd className="font-semibold">{formatCurrency(summary.gross)}</dd></div>
-              <div className="flex justify-between"><dt>Total discount</dt><dd className="font-semibold">{formatCurrency(summary.discount)}</dd></div>
-              <div className="flex justify-between border-t-2 border-slate-900 pt-3 text-lg font-black"><dt>Net amount</dt><dd>{formatCurrency(summary.net)}</dd></div>
-              <div className="flex justify-between"><dt>Paid amount</dt><dd className="font-semibold">{formatCurrency(summary.paid)}</dd></div>
-              <div className="flex justify-between"><dt>Credit balance</dt><dd className="font-semibold">{formatCurrency(summary.credit)}</dd></div>
-            </dl>
-          </section>
+          <dl className="space-y-0.5">
+            <div className="flex justify-between"><dt>Gross amount</dt><dd className="font-semibold">{formatCurrency(summary.gross)}</dd></div>
+            <div className="flex justify-between"><dt>Total discount</dt><dd className="font-semibold">{formatCurrency(summary.discount)}</dd></div>
+            <div className="flex justify-between border-t-2 border-slate-900 pt-0.5 text-[11px] font-black"><dt>Net amount</dt><dd>{formatCurrency(summary.net)}</dd></div>
+            <div className="flex justify-between"><dt>Paid amount</dt><dd className="font-semibold">{formatCurrency(summary.paid)}</dd></div>
+            <div className="flex justify-between"><dt>Credit balance</dt><dd className="font-semibold">{formatCurrency(summary.credit)}</dd></div>
+          </dl>
         </section>
 
-        <footer className="mt-12 border-t border-slate-300 pt-4 text-center text-[10px] text-slate-500">
+        <section className="mt-auto grid break-inside-avoid grid-cols-3 gap-10 pt-8 text-center">
+          {['Received in good condition (Customer)', 'Cashier', 'Authorized signature'].map((label) => (
+            <div key={label} className="border-t border-dotted border-slate-500 pt-1 text-[9px] text-slate-700">
+              {label}
+            </div>
+          ))}
+        </section>
+
+        <footer className="mt-2 text-center text-[7px] text-slate-400">
           System generated on {new Date().toLocaleString('en-LK')} · {invoice.Invoice_no}
         </footer>
       </article>
