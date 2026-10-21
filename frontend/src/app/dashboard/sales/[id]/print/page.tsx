@@ -97,7 +97,6 @@ export default function SalesInvoicePrintPage() {
   }
 
   const { invoice, company, branch } = payload;
-  const phone = company?.phone || branch?.phone;
   const address = company?.address || branch?.address;
 
   return (
@@ -128,7 +127,7 @@ export default function SalesInvoicePrintPage() {
 
       {/* A5 landscape sheet (210 x 148 mm). On screen it previews the page; in print the app shell's 8mm padding is the margin. */}
       <article className="flex min-h-[148mm] w-[210mm] flex-col bg-white p-[8mm] text-[9px] leading-snug text-slate-950 shadow-sm ring-1 ring-slate-200 print:min-h-[131mm] print:w-full print:p-0 print:shadow-none print:ring-0">
-        <header className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-slate-300 pb-3">
+        <header className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-slate-300 pb-1.5">
           <div className="flex items-center gap-4">
             {company?.logo && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -139,16 +138,6 @@ export default function SalesInvoicePrintPage() {
                 {company?.name || 'Hire Purchase ERP'}
               </div>
               {address && <div className="mt-0.5 whitespace-pre-line text-[11px] text-slate-700">{address}</div>}
-              {(phone || company?.email) && (
-                <div className="text-[11px] text-slate-700">
-                  {[phone && `Tel: ${phone}`, company?.email && `Email: ${company.email}`].filter(Boolean).join('  ·  ')}
-                </div>
-              )}
-              {branch?.name && branch.name !== company?.name && (
-                <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
-                  {branch.name} branch{branch.bccode ? ` · ${branch.bccode}` : ''}
-                </div>
-              )}
             </div>
           </div>
           <dl className="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5 pt-1 text-[11px]">
@@ -159,7 +148,7 @@ export default function SalesInvoicePrintPage() {
           </dl>
         </header>
 
-        <h1 className="mx-auto mt-2 w-fit border-b-2 border-slate-900 px-3 pb-0.5 text-[16px] font-black uppercase tracking-[0.3em]">Invoice</h1>
+        <h1 className="mx-auto mt-0.5 w-fit border-b-2 border-slate-900 px-3 pb-0.5 text-[16px] font-black uppercase tracking-[0.3em]">Invoice</h1>
 
         <section className="mt-1.5 grid grid-cols-2 items-start gap-4">
           <div className="min-w-0">
