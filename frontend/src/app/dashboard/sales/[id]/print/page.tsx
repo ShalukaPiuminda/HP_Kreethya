@@ -127,7 +127,7 @@ export default function SalesInvoicePrintPage() {
 
       {/* A5 landscape sheet (210 x 148 mm). On screen it previews the page; in print the app shell's 8mm padding is the margin. */}
       <article className="flex min-h-[148mm] w-[210mm] flex-col bg-white p-[8mm] text-[9px] leading-snug text-slate-950 shadow-sm ring-1 ring-slate-200 print:min-h-[131mm] print:w-full print:p-0 print:shadow-none print:ring-0">
-        <header className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-slate-300 pb-1.5">
+        <header className="grid grid-cols-[1fr_auto] items-start gap-4 border-b border-slate-300 pb-2">
           <div className="flex items-center gap-4">
             {company?.logo && (
               // eslint-disable-next-line @next/next/no-img-element
