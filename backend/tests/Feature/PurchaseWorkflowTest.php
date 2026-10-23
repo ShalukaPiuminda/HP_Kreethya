@@ -6,6 +6,7 @@ use App\Models\Item;
 use App\Models\Role;
 use App\Models\Store;
 use App\Models\Supplier;
+use App\Models\TItemSerialMovement;
 use App\Models\TPurchaseOrderSum;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -264,6 +265,132 @@ class PurchaseWorkflowTest extends TestCase
             'item_code' => $serializedItem->item_code,
             'old_serial_no' => 'GRN-OLD-001',
             'new_serial_no' => 'GRN-NEW-001',
+            'BC' => 'HQ',
+            'UID' => 'admin',
+        ]);
+    }
+
+    public function test_grn_generates_serials_for_serialized_items_when_auto_serial_is_on(): void
+    {
+        $serializedItem = $this->createSerializedItem('ITM-AUTO');
+
+        $first = $this->postJson('/api/v1/purchase-receipts', [
+            'invoice_date' => '2026-10-23',
+            'supplier_code' => $this->supplier->Code,
+            'store_id' => $this->store->id,
+            'items' => [
+                [
+                    'item_code' => $serializedItem->item_code,
+                    'qty' => 3,
+                    'free_qty' => 1,
+                    'unit_price' => 250,
+                    'auto_serial' => true,
+                    'serial_numbers' => ['IGNORED-001'],
+                ],
+                [
+                    'item_code' => $this->standardItem->item_code,
+                    'qty' => 2,
+                    'unit_price' => 500,
+                    'auto_serial' => true,
+                ],
+            ],
+        ])->assertCreated()
+            ->assertJsonPath('data.details.0.serial_numbers', [
+                'ITM-AUTO-000001',
+                'ITM-AUTO-000002',
+                'ITM-AUTO-000003',
+                'ITM-AUTO-000004',
+            ])
+            ->assertJsonPath('data.details.1.serial_numbers', []);
+
+        $invoiceNo = $first->json('data.Invoice_no');
+        $this->assertSame(4, TItemSerialMovement::query()
+            ->where('trans_no', $invoiceNo)
+            ->where('item_code', $serializedItem->item_code)
+            ->where('qun_in', 1)
+            ->count());
+
+        $this->postJson('/api/v1/purchase-receipts', [
+            'invoice_date' => '2026-10-23',
+            'supplier_code' => $this->supplier->Code,
+            'store_id' => $this->store->id,
+            'items' => [
+                [
+                    'item_code' => $serializedItem->item_code,
+                    'qty' => 1,
+                    'unit_price' => 250,
+                    'auto_serial' => true,
+                ],
+            ],
+        ])->assertCreated()
+            ->assertJsonPath('data.details.0.serial_numbers', ['ITM-AUTO-000005']);
+    }
+
+    public function test_generated_serials_skip_numbers_already_entered_manually(): void
+    {
+        $serializedItem = $this->createSerializedItem('ITM-SKIP');
+
+        $this->postJson('/api/v1/purchase-receipts', [
+            'invoice_date' => '2026-10-23',
+            'supplier_code' => $this->supplier->Code,
+            'store_id' => $this->store->id,
+            'items' => [
+                [
+                    'item_code' => $serializedItem->item_code,
+                    'qty' => 1,
+                    'unit_price' => 250,
+                    'serial_numbers' => ['ITM-SKIP-000001'],
+                ],
+            ],
+        ])->assertCreated();
+
+        $this->postJson('/api/v1/purchase-receipts', [
+            'invoice_date' => '2026-10-23',
+            'supplier_code' => $this->supplier->Code,
+            'store_id' => $this->store->id,
+            'items' => [
+                [
+                    'item_code' => $serializedItem->item_code,
+                    'qty' => 1,
+                    'unit_price' => 250,
+                    'auto_serial' => true,
+                ],
+            ],
+        ])->assertCreated()
+            ->assertJsonPath('data.details.0.serial_numbers', ['ITM-SKIP-000002']);
+    }
+
+    public function test_manual_serial_entry_still_requires_one_serial_per_unit(): void
+    {
+        $serializedItem = $this->createSerializedItem('ITM-MANUAL');
+
+        $this->postJson('/api/v1/purchase-receipts', [
+            'invoice_date' => '2026-10-23',
+            'supplier_code' => $this->supplier->Code,
+            'store_id' => $this->store->id,
+            'items' => [
+                [
+                    'item_code' => $serializedItem->item_code,
+                    'qty' => 2,
+                    'unit_price' => 250,
+                    'auto_serial' => false,
+                    'serial_numbers' => ['MAN-001'],
+                ],
+            ],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors('items.0.item_code');
+    }
+
+    private function createSerializedItem(string $itemCode): Item
+    {
+        return Item::create([
+            'item_code' => $itemCode,
+            'item_description' => 'Serialized Item',
+            'is_batch' => false,
+            'is_serialized' => true,
+            'reorder_level' => 0,
+            'standard_purchase_price' => 250,
+            'standard_sales_price' => 350,
             'BC' => 'HQ',
             'UID' => 'admin',
         ]);
