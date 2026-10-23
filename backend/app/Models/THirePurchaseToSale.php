@@ -11,7 +11,7 @@ class THirePurchaseToSale extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'conversion_date' => 'date',
+        'conversion_date' => 'date:Y-m-d',
         'amount' => 'decimal:2',
         'returned_at' => 'datetime',
     ];

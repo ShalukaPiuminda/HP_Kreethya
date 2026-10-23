@@ -30,7 +30,7 @@ class THpInstallmentPayment extends Model
     ];
 
     protected $casts = [
-        'payment_date' => 'date',
+        'payment_date' => 'date:Y-m-d',
         'principal_amount' => 'decimal:2',
         'penalty_amount' => 'decimal:2',
         'discount_amount' => 'decimal:2',

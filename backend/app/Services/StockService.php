@@ -145,7 +145,8 @@ class StockService
             ->when($search, function ($query, $search) {
                 $query->where(function ($nested) use ($search) {
                     $nested->where('item_code', 'like', "%{$search}%")
-                        ->orWhere('item_description', 'like', "%{$search}%");
+                        ->orWhere('item_description', 'like', "%{$search}%")
+                        ->orWhere('barcode', 'like', "%{$search}%");
                 });
             })
             ->orderBy('item_code')
@@ -246,6 +247,7 @@ class StockService
                 'id' => $item->id,
                 'item_code' => $item->item_code,
                 'item_description' => $item->item_description,
+                'barcode' => $item->barcode,
                 'is_batch' => (bool) $item->is_batch,
                 'default_batch_price_mode' => (string) ($item->default_batch_price_mode ?: 'batch'),
                 'is_serialized' => (bool) $item->is_serialized,

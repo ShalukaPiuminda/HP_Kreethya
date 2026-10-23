@@ -1,7 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
+  CheckCircle2,
   PackageCheck,
   Plus,
   RefreshCcw,
@@ -35,6 +37,9 @@ import { ChequeEntryFields } from '@/components/cheque-entry-fields';
 import type { ChequeBank, PaymentOptions } from '@/lib/payment-options';
 import { PHONE_PATTERN, PHONE_TITLE } from '@/lib/phone';
 import { SearchSelect } from '@/components/search-select';
+import { ItemFormModal, type Item, type ItemFormState } from '@/components/item-form-modal';
+import { ScanInput } from '@/components/scan-input';
+import { findItemByScan } from '@/lib/barcode';
 
 type BatchPricingMode = 'batch' | 'average' | 'last';
 type DiscountType = 'amount' | 'percent';
@@ -133,6 +138,35 @@ function updateSerialInput(value: string, qty: string, freeQty: string, index: n
   return serials.filter(Boolean).join('\n');
 }
 
+/** Enter in a serial box (e.g. from a scanner) moves to the next serial box instead of posting the GRN. */
+function focusNextSerialInput(event: React.KeyboardEvent<HTMLInputElement>) {
+  if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+
+  event.preventDefault();
+  const group = event.currentTarget.closest('[data-serial-group]');
+  const inputs = Array.from(group?.querySelectorAll<HTMLInputElement>('input') ?? []);
+  inputs[inputs.indexOf(event.currentTarget) + 1]?.focus();
+}
+
+type ScanOutcome = { type: 'success' | 'error'; message: string };
+
+/** Puts an item on a line and resets its prices and tracking details to that item's defaults. */
+function applyItemToLine(
+  line: ReceiptLineForm,
+  itemCode: string,
+  item: PurchaseItemOption | undefined
+): ReceiptLineForm {
+  return {
+    ...line,
+    item_code: itemCode,
+    unit_price: String(numeric(item?.standard_purchase_price)),
+    sales_price: String(numeric(item?.standard_sales_price)),
+    pricing_mode: (item?.default_batch_price_mode as BatchPricingMode | undefined) ?? 'batch',
+    batch_no: '',
+    serial_numbers: '',
+  };
+}
+
 function discountAmount(baseAmount: number, value: string, type: DiscountType): number {
   const discountValue = numeric(value);
 
@@ -150,6 +184,7 @@ export default function PurchasesPage() {
   const canCreate = hasPermission('purchases', 'can_create');
   const canCreateSupplier = hasPermission('suppliers', 'can_create');
   const canCreateStore = hasPermission('stores', 'can_create');
+  const canCreateItem = hasPermission('items', 'can_create');
 
   const [receipts, setReceipts] = useState<PurchaseReceipt[]>([]);
   const [openOrders, setOpenOrders] = useState<PurchaseOrder[]>([]);
@@ -164,6 +199,10 @@ export default function PurchasesPage() {
   const [quickStoreOpen, setQuickStoreOpen] = useState(false);
   const [quickSupplier, setQuickSupplier] = useState({ name: '', phone: '', address: '', type: 'normal' });
   const [quickStore, setQuickStore] = useState({ name: '', location: '' });
+  const [newItemLine, setNewItemLine] = useState<{
+    lineKey: number;
+    initialValues: Partial<ItemFormState>;
+  } | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -172,6 +211,13 @@ export default function PurchasesPage() {
     type: 'success' | 'error';
     message: string;
   } | null>(null);
+  const [scanNotice, setScanNotice] = useState<ScanOutcome | null>(null);
+  // Latest committed form for the scan handler, so fast scans build on each other in order.
+  const formRef = useRef(form);
+
+  useLayoutEffect(() => {
+    formRef.current = form;
+  });
 
   const loadData = useCallback(async () => {
     if (!canRead) {
@@ -304,7 +350,71 @@ export default function PurchasesPage() {
   const openCreate = () => {
     setForm(blankReceiptForm());
     setNotice(null);
+    setScanNotice(null);
     setShowForm(true);
+  };
+
+  /**
+   * Applies one scanned item to the draft GRN (never posts, never moves stock).
+   * A GRN keeps one line per item, so a repeat scan adds 1 to that line; against a
+   * purchase order only ordered items are accepted, up to the remaining quantity.
+   */
+  const handleScan = (code: string) => {
+    const item = findItemByScan(items, code);
+    if (!item) {
+      setScanNotice({
+        type: 'error',
+        message: `Unknown barcode "${code}". No item in this branch uses it. If it was just added, reload the page.`,
+      });
+      return;
+    }
+
+    const current = formRef.current;
+    const label = `${item.item_code} - ${item.item_description}`;
+    const serialHint = item.is_serialized ? ' Enter or scan the serial number for each unit.' : '';
+    const order = openOrders.find((candidate) => candidate.po_no === current.purchase_order_no);
+    const existing = current.items.find((line) => line.item_code === item.item_code);
+    let next: ReceiptForm;
+    let outcome: ScanOutcome;
+
+    if (existing) {
+      const qty = numeric(existing.qty) + 1;
+      if (order) {
+        const detail = order.details.find((candidate) => candidate.item_code === item.item_code);
+        const remaining = detail ? detail.remaining_qty ?? detail.qty - detail.received_qty : 0;
+        if (qty > remaining) {
+          setScanNotice({ type: 'error', message: `Only ${remaining} of ${label} remain on ${order.po_no}.` });
+          return;
+        }
+      }
+
+      next = {
+        ...current,
+        items: current.items.map((line) => (line.key === existing.key ? { ...line, qty: String(qty) } : line)),
+      };
+      outcome = { type: 'success', message: `${label}: quantity is now ${qty}.${serialHint}` };
+    } else {
+      if (order) {
+        setScanNotice({ type: 'error', message: `${label} is not on purchase order ${order.po_no}.` });
+        return;
+      }
+
+      const blank = current.items.find((line) => !line.item_code);
+      const newLine = createLineForItem(item);
+      next = {
+        ...current,
+        // Newest line goes on top so it stays next to the scan box and Add Line button.
+        items: [newLine, ...current.items.filter((line) => line.key !== blank?.key)],
+      };
+      outcome = {
+        type: 'success',
+        message: `${label} added.${item.is_batch ? ' Enter the batch number and batch sales price.' : ''}${serialHint}`,
+      };
+    }
+
+    formRef.current = next;
+    setForm(next);
+    setScanNotice(outcome);
   };
 
   const changeSupplier = (supplierCode: string) => {
@@ -358,24 +468,44 @@ export default function PurchasesPage() {
         if (line.key !== key) return line;
         if (field !== 'item_code') return { ...line, [field]: value };
 
-        const item = items.find((candidate) => candidate.item_code === value);
-        return {
-          ...line,
-          item_code: value,
-          unit_price: String(numeric(item?.standard_purchase_price)),
-          sales_price: String(numeric(item?.standard_sales_price)),
-          pricing_mode: (item?.default_batch_price_mode as BatchPricingMode | undefined) ?? 'batch',
-          batch_no: '',
-          serial_numbers: '',
-        };
+        return applyItemToLine(line, value, items.find((candidate) => candidate.item_code === value));
       }),
     }));
+  };
+
+  /** Opens the item form from a line's item picker, pre-filled with what was searched. */
+  const openNewItem = (lineKey: number, query: string) => {
+    // A scanned or typed number is a barcode; anything else starts the description.
+    const looksLikeBarcode = /^\d{6,}$/.test(query);
+    setNewItemLine({
+      lineKey,
+      initialValues: looksLikeBarcode ? { barcode: query } : { item_description: query },
+    });
+  };
+
+  /** Adds the new item to the picker list and selects it on the line it was created from. */
+  const handleItemCreated = (saved: Item) => {
+    const lineKey = newItemLine?.lineKey;
+    setItems((current) => [...current, saved]);
+    setNewItemLine(null);
+    if (lineKey === undefined) return;
+
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((line) => (
+        line.key === lineKey ? applyItemToLine(line, saved.item_code, saved) : line
+      )),
+    }));
+    setScanNotice({
+      type: 'success',
+      message: `${saved.item_code} - ${saved.item_description} created and added. Enter the quantity and unit cost.`,
+    });
   };
 
   const addLine = () => {
     setForm((current) => ({
       ...current,
-      items: [...current.items, blankReceiptLine()],
+      items: [blankReceiptLine(), ...current.items],
     }));
   };
 
@@ -796,17 +926,36 @@ export default function PurchasesPage() {
                       : 'Add supplier delivery lines and tracking information.'}
                   </p>
                 </div>
-                {!selectedOrder && (
-                  <button
-                    type="button"
-                    onClick={addLine}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-slate-200 transition hover:bg-indigo-50"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Line
-                  </button>
-                )}
+                <div className="flex shrink-0 items-center gap-2">
+                  <ScanInput onScan={handleScan} placeholder="Scan barcode + Enter" className="w-44 sm:w-64" />
+                  {!selectedOrder && (
+                    <button
+                      type="button"
+                      onClick={addLine}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-slate-200 transition hover:bg-indigo-50"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add Line
+                    </button>
+                  )}
+                </div>
               </div>
+              {scanNotice && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className={`flex items-center gap-2 border-b px-4 py-2.5 text-xs font-semibold ${
+                    scanNotice.type === 'error'
+                      ? 'border-rose-100 bg-rose-50 text-rose-700'
+                      : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  {scanNotice.type === 'error'
+                    ? <AlertTriangle className="h-4 w-4 shrink-0" />
+                    : <CheckCircle2 className="h-4 w-4 shrink-0" />}
+                  {scanNotice.message}
+                </div>
+              )}
               <div className="space-y-3 p-4">
                 {form.items.map((line) => {
                   const item = items.find((candidate) => candidate.item_code === line.item_code);
@@ -819,7 +968,7 @@ export default function PurchasesPage() {
 
                   return (
                     <div key={line.key} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
                         <OperationField label="Item" required className="xl:col-span-2">
                           <SearchSelect
                             value={line.item_code}
@@ -827,10 +976,15 @@ export default function PurchasesPage() {
                             options={items.map((candidate) => ({
                               value: candidate.item_code,
                               label: `${candidate.item_code} - ${candidate.item_description}`,
+                              keywords: candidate.barcode,
                               disabled: form.items.some((existing) => existing.key !== line.key && existing.item_code === candidate.item_code),
                             }))}
                             placeholder="Select item"
-                            searchPlaceholder="Search by code or description..."
+                            searchPlaceholder="Search by code, description or barcode..."
+                            createAction={canCreateItem ? {
+                              label: 'Add new item',
+                              onCreate: (query) => openNewItem(line.key, query),
+                            } : undefined}
                             className={inputClass}
                             disabled={Boolean(selectedOrder)}
                             required
@@ -870,7 +1024,7 @@ export default function PurchasesPage() {
                             required
                           />
                         </OperationField>
-                        <OperationField label="Line Discount">
+                        <OperationField label="Line Discount" className="xl:col-span-2">
                           <div className="flex min-w-0 gap-2">
                             <select value={line.discount_type} onChange={(event) => updateLine(line.key, 'discount_type', event.target.value)} className={discountTypeClass}>
                               <option value="amount">LKR</option>
@@ -958,11 +1112,13 @@ export default function PurchasesPage() {
                               label={`Serial Numbers (${(Number(line.qty) || 0) + (Number(line.free_qty) || 0)} required)`}
                               className={item.is_batch ? '' : 'md:col-span-2 xl:col-span-3'}
                             >
-                              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                              <div data-serial-group className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                 {serialInputRows(line.serial_numbers, line.qty, line.free_qty).map((serialNo, serialIndex) => (
                                   <input
                                     key={serialIndex}
                                     value={serialNo}
+                                    onKeyDown={focusNextSerialInput}
+                                    autoComplete="off"
                                     onChange={(event) =>
                                       updateLine(
                                         line.key,
@@ -1183,6 +1339,14 @@ export default function PurchasesPage() {
           </form>
         </OperationModal>
       )}
+
+      {newItemLine && (
+        <ItemFormModal
+          initialValues={newItemLine.initialValues}
+          onClose={() => setNewItemLine(null)}
+          onSaved={handleItemCreated}
+        />
+      )}
     </div>
   );
 }
@@ -1190,7 +1354,7 @@ export default function PurchasesPage() {
 const inputClass =
   'w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500';
 const discountTypeClass = `${inputClass} !w-24 shrink-0`;
-const discountAmountClass = `${inputClass} !w-auto min-w-[7.5rem] flex-1`;
+const discountAmountClass = `${inputClass} !w-auto min-w-0 flex-1`;
 
 function SummaryRow({
   label,

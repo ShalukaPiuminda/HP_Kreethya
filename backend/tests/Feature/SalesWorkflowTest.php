@@ -124,6 +124,7 @@ class SalesWorkflowTest extends TestCase
                 ],
             ],
         ])->assertCreated()
+            ->assertJsonPath('data.Invoice_date', '2026-06-14')
             ->assertJsonPath('data.Net_Amount', '1000.00')
             ->assertJsonPath('data.advance_applied', '300.00')
             ->assertJsonPath('data.paid_amount', '500.00')

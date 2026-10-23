@@ -32,6 +32,7 @@ export interface StockItem {
   id: number;
   item_code: string;
   item_description: string;
+  barcode?: string | null;
   is_batch: boolean;
   default_batch_price_mode?: 'batch' | 'average' | 'last';
   is_serialized: boolean;

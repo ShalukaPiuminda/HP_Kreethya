@@ -11,7 +11,7 @@ class TAdvancCusPayment extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'payment_date' => 'date',
+        'payment_date' => 'date:Y-m-d',
         'amount' => 'decimal:2',
         'remaining_amount' => 'decimal:2',
         'cash_payment' => 'decimal:2',

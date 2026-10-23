@@ -11,9 +11,9 @@ class TServiceReturn extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'return_date' => 'date',
-        'expected_completion_date' => 'date',
-        'completed_date' => 'date',
+        'return_date' => 'date:Y-m-d',
+        'expected_completion_date' => 'date:Y-m-d',
+        'completed_date' => 'date:Y-m-d',
         'is_warranty' => 'boolean',
     ];
 

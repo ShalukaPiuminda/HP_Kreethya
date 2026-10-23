@@ -11,7 +11,7 @@ class TItemMovement extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'dDate' => 'date',
+        'dDate' => 'date:Y-m-d',
         'store_id' => 'integer',
         'qun_in' => 'integer',
         'qun_out' => 'integer',

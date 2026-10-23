@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronLeft, ChevronRight, ChevronsUpDown, Search, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ChevronsUpDown, Plus, Search, X } from 'lucide-react';
 import { usePopupKeyboard } from '@/lib/use-popup-keyboard';
 
 export type SearchSelectOption = {
@@ -40,6 +40,7 @@ export function SearchSelect({
   wrapperClassName = '',
   name,
   id,
+  createAction,
 }: {
   value: string | number | null | undefined;
   onChange: (value: string) => void;
@@ -60,6 +61,11 @@ export function SearchSelect({
   wrapperClassName?: string;
   name?: string;
   id?: string;
+  /**
+   * Adds a "create new" button under the list (e.g. "Add new item"). It is highlighted when the
+   * search finds nothing; clicking it closes the popup and passes on the search text.
+   */
+  createAction?: { label: string; onCreate: (query: string) => void };
 }) {
   const current = value == null ? '' : String(value);
   const dialogTitleId = useId();
@@ -115,6 +121,13 @@ export function SearchSelect({
     close();
   }
 
+  function create() {
+    if (!createAction) return;
+    const text = query.trim();
+    close();
+    createAction.onCreate(text);
+  }
+
   function goToPage(next: number) {
     setPage(Math.min(Math.max(1, next), pageCount));
     setActive(0);
@@ -157,7 +170,8 @@ export function SearchSelect({
       goToPage(safePage - 1);
     } else if (event.key === 'Enter' && event.target === searchRef.current) {
       event.preventDefault();
-      choose(rows[active]);
+      if (rows.length === 0 && createAction) create();
+      else choose(rows[active]);
     }
   }
 
@@ -224,14 +238,30 @@ export function SearchSelect({
           >
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
               <h2 id={dialogTitleId} className="truncate text-base font-bold text-slate-900">{heading}</h2>
-              <button
-                type="button"
-                onClick={close}
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {createAction && (
+                  <button
+                    type="button"
+                    onClick={create}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                      matches.length === 0
+                        ? 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700'
+                        : 'border border-indigo-200 text-indigo-700 hover:bg-indigo-50'
+                    }`}
+                  >
+                    <Plus className="h-3.5 w-3.5 shrink-0" />
+                    {createAction.label}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={close}
+                  className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             <div className="border-b border-slate-100 px-5 py-3">

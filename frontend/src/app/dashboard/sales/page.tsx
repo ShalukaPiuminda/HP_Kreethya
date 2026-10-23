@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Banknote,
@@ -66,7 +66,9 @@ import type {
 } from '@/lib/payment-options';
 import { MobileInput } from '@/components/mobile-input';
 import { SearchSelect } from '@/components/search-select';
+import { ScanInput } from '@/components/scan-input';
 import { StockQtyInput } from '@/components/stock-qty-input';
+import { findItemByScan } from '@/lib/barcode';
 import {
   Badge,
   DiscountInput,
@@ -274,6 +276,105 @@ function resolveBatchUnitPrice(
   return toMoneyInput(numeric(selectedBatch?.sales_price ?? item.standard_sales_price));
 }
 
+/** Puts an item on a line the same way for the item picker and the barcode scanner. */
+function selectItemOnLine(
+  line: SaleLineForm,
+  itemCode: string,
+  item: StockItem | undefined,
+  storeId: string,
+  batchNo: string
+): SaleLineForm {
+  const pricingMode = getDefaultPricingMode(item);
+
+  return {
+    ...line,
+    item_code: itemCode,
+    batch_no: item?.is_batch ? batchNo : '',
+    pricing_mode: pricingMode,
+    unit_price: resolveBatchUnitPrice(item, storeId, batchNo, pricingMode),
+    serial_numbers: '',
+  };
+}
+
+type ScanOutcome = { type: 'success' | 'error'; message: string };
+
+/**
+ * Applies one scanned item to the draft invoice (never saves it, never moves stock):
+ * adds 1 to a line of the same item/batch whose price and discount were not changed by hand,
+ * otherwise starts a new line on the first batch that still has stock left in the store.
+ */
+function applyScanToForm(form: SaleForm, item: StockItem): { form: SaleForm; outcome: ScanOutcome } {
+  const label = `${item.item_code} - ${item.item_description}`;
+  const serialHint = item.is_serialized ? ' Select the serial number for the new unit.' : '';
+
+  if (!form.store_id) {
+    return { form, outcome: { type: 'error', message: 'Select the store before scanning items.' } };
+  }
+
+  if (storeQty(item, form.store_id) <= 0) {
+    return { form, outcome: { type: 'error', message: `${label} is out of stock in this store.` } };
+  }
+
+  const batches = getAvailableBatches(item, form.store_id);
+  const remaining = (batchNo: string) => {
+    const onHand = item.is_batch
+      ? batches.find((candidate) => candidate.batch_no === batchNo)?.qty_in_hand ?? 0
+      : storeQty(item, form.store_id);
+    const used = form.items
+      .filter((line) => line.item_code === item.item_code && (!item.is_batch || line.batch_no === batchNo))
+      .reduce((sum, line) => sum + numeric(line.qty), 0);
+
+    return onHand - used;
+  };
+
+  const defaultMode = getDefaultPricingMode(item);
+  const mergeLine = form.items.find((line) =>
+    line.item_code === item.item_code
+    && line.pricing_mode === defaultMode
+    && numeric(line.discount) <= 0
+    && numeric(line.unit_price) === numeric(resolveBatchUnitPrice(item, form.store_id, line.batch_no, defaultMode))
+    && remaining(line.batch_no) > 0
+  );
+
+  if (mergeLine) {
+    const qty = numeric(mergeLine.qty) + 1;
+    return {
+      form: {
+        ...form,
+        items: form.items.map((line) => (line.key === mergeLine.key ? { ...line, qty: String(qty) } : line)),
+      },
+      outcome: { type: 'success', message: `${label}: quantity is now ${qty}.${serialHint}` },
+    };
+  }
+
+  const batchNo = item.is_batch
+    ? batches.find((candidate) => remaining(candidate.batch_no) > 0)?.batch_no
+    : remaining('') > 0 ? '' : undefined;
+
+  if (batchNo === undefined) {
+    return { form, outcome: { type: 'error', message: `No more stock of ${label} left in this store for this invoice.` } };
+  }
+
+  const blank = form.items.find((line) => !line.item_code);
+  const newLine = {
+    ...selectItemOnLine(blank ?? blankLine(), item.item_code, item, form.store_id, batchNo),
+    qty: '1',
+  };
+
+  return {
+    form: {
+      ...form,
+      items: blank
+        ? form.items.map((line) => (line.key === blank.key ? newLine : line))
+        : [...form.items, newLine],
+    },
+    outcome: {
+      type: 'success',
+      message: `${label} added${item.is_batch ? ` from batch ${batchNo}` : ''}.${serialHint}`,
+    },
+  };
+}
+
 function openPendingPrintWindow() {
   if (typeof window === 'undefined') return null;
 
@@ -366,6 +467,16 @@ export default function SalesPage() {
     type: 'success' | 'error';
     message: string;
   } | null>(null);
+  const [scanNotice, setScanNotice] = useState<ScanOutcome | null>(null);
+  // Latest committed form/inventory for the scan handler, so fast scans build on each other in order.
+  const formRef = useRef(form);
+  const inventoryRef = useRef(inventory);
+  const scanQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  useLayoutEffect(() => {
+    formRef.current = form;
+    inventoryRef.current = inventory;
+  });
 
   const loadData = useCallback(async () => {
     if (!canRead) {
@@ -497,7 +608,52 @@ export default function SalesPage() {
   const openCreate = () => {
     setForm(blankForm());
     setNotice(null);
+    setScanNotice(null);
     setShowForm(true);
+  };
+
+  const processScan = async (code: string) => {
+    let item = findItemByScan(inventoryRef.current, code);
+
+    if (!item) {
+      // The item may have been created or given a barcode after this page loaded.
+      try {
+        const response = await api.get<StockItem[]>(`/v1/stock?search=${encodeURIComponent(code)}`);
+        const fresh = findItemByScan(response.data ?? [], code);
+
+        if (fresh) {
+          const current = inventoryRef.current;
+          const next = current.some((candidate) => candidate.item_code === fresh.item_code)
+            ? current.map((candidate) => (candidate.item_code === fresh.item_code ? fresh : candidate))
+            : [...current, fresh];
+          inventoryRef.current = next;
+          setInventory(next);
+          item = fresh;
+        }
+      } catch (error) {
+        setScanNotice({ type: 'error', message: getApiErrorMessage(error, `Could not look up "${code}".`) });
+        return;
+      }
+    }
+
+    if (!item) {
+      setScanNotice({ type: 'error', message: `Unknown barcode "${code}". No item in this branch uses it.` });
+      return;
+    }
+
+    const result = applyScanToForm(formRef.current, item);
+    if (result.form !== formRef.current) {
+      formRef.current = result.form;
+      setForm(result.form);
+    }
+    setScanNotice(result.outcome);
+  };
+
+  // Scans are queued so each one is applied after the previous, even when a lookup is slow.
+  const handleScan = (code: string) => {
+    scanQueueRef.current = scanQueueRef.current
+      .then(() => processScan(code))
+      .catch(() => undefined);
   };
 
   const saveQuickCustomer = async (event: React.FormEvent) => {
@@ -581,19 +737,7 @@ export default function SalesPage() {
 
         if (field === 'item_code') {
           const firstBatch = getAvailableBatches(item, current.store_id)[0];
-          return {
-            ...line,
-            item_code: value,
-            batch_no: item?.is_batch ? firstBatch?.batch_no ?? '' : '',
-            pricing_mode: getDefaultPricingMode(item),
-            unit_price: resolveBatchUnitPrice(
-              item,
-              current.store_id,
-              firstBatch?.batch_no ?? '',
-              getDefaultPricingMode(item)
-            ),
-            serial_numbers: '',
-          };
+          return selectItemOnLine(line, value, item, current.store_id, firstBatch?.batch_no ?? '');
         }
 
         if (field === 'batch_no') {
@@ -936,12 +1080,37 @@ export default function SalesPage() {
               title="Invoice Items"
               subtitle={form.store_id ? 'Availability is checked against the selected store.' : 'Select a store to see live availability.'}
               action={
-                <button type="button" onClick={addLine} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700">
-                  <Plus className="h-4 w-4" /> Add Item
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <ScanInput
+                    onScan={handleScan}
+                    disabled={!form.store_id}
+                    placeholder={form.store_id ? 'Scan barcode + Enter' : 'Select a store to scan'}
+                    className="w-44 sm:w-64"
+                  />
+                  <button type="button" onClick={addLine} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700">
+                    <Plus className="h-4 w-4" /> Add Item
+                  </button>
+                </div>
               }
               bodyClassName="p-0"
             >
+              {scanNotice && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className={`flex items-center gap-2 border-b px-5 py-2.5 text-xs font-semibold ${
+                    scanNotice.type === 'error'
+                      ? 'border-rose-100 bg-rose-50 text-rose-700'
+                      : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  {scanNotice.type === 'error'
+                    ? <AlertTriangle className="h-4 w-4 shrink-0" />
+                    : <CheckCircle2 className="h-4 w-4 shrink-0" />}
+                  {scanNotice.message}
+                </div>
+              )}
+
               <LineHeader columns={['Item', 'Batch', 'Qty', 'Unit Price', 'Discount', 'Line Net']} />
 
               <div className="divide-y divide-slate-100">
@@ -989,11 +1158,12 @@ export default function SalesPage() {
                                   value: stock.item_code,
                                   label: `${stock.item_code} - ${stock.item_description}`,
                                   description: qty > 0 ? `${qty} in stock${form.store_id ? '' : ' (all stores)'}` : 'Out of stock',
+                                  keywords: stock.barcode,
                                   disabled: qty <= 0 && stock.item_code !== line.item_code,
                                 };
                               })}
                               placeholder="Select item"
-                              searchPlaceholder="Search by code or description..."
+                              searchPlaceholder="Search by code, description or barcode..."
                               className={iconInputClass}
                               required
                             />

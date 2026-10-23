@@ -21,7 +21,7 @@ class HpStatusHistory extends Model
     ];
 
     protected $casts = [
-        'event_date' => 'date',
+        'event_date' => 'date:Y-m-d',
         'created_at' => 'datetime',
     ];
 }

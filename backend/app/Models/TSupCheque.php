@@ -11,8 +11,8 @@ class TSupCheque extends Model
     public $timestamps = false;
 
     protected $casts = [
-        'release_date' => 'date',
-        'realized_date' => 'date',
+        'release_date' => 'date:Y-m-d',
+        'realized_date' => 'date:Y-m-d',
         'amount' => 'decimal:2',
         'status_changed_at' => 'datetime',
     ];

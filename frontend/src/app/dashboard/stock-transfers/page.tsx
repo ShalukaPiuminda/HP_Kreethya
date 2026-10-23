@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import {
   parseSerialNumbers,
@@ -8,6 +8,8 @@ import {
   Store,
 } from '@/lib/inventory';
 import { SearchSelect } from '@/components/search-select';
+import { ScanInput } from '@/components/scan-input';
+import { findItemByScan } from '@/lib/barcode';
 
 const initialForm = {
   item_code: '',
@@ -40,6 +42,13 @@ export default function StockTransfersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [scanNotice, setScanNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  // Latest committed form for the scan handler, so fast scans build on each other in order.
+  const formRef = useRef(form);
+
+  useLayoutEffect(() => {
+    formRef.current = form;
+  });
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -106,6 +115,56 @@ export default function StockTransfersPage() {
     }));
   };
 
+  /**
+   * A scan selects the item (same as picking it); scanning the same item again adds 1 to the
+   * quantity, never above what the source store/batch holds. It never completes the transfer.
+   */
+  const handleScan = (code: string) => {
+    const item = findItemByScan(inventory, code);
+    if (!item) {
+      setScanNotice({ type: 'error', message: `Unknown barcode "${code}". No item in this branch uses it.` });
+      return;
+    }
+
+    const label = `${item.item_code} - ${item.item_description}`;
+    if (item.total_qty <= 0) {
+      setScanNotice({ type: 'error', message: `${label} has no stock to transfer.` });
+      return;
+    }
+
+    const current = formRef.current;
+    if (current.item_code !== item.item_code) {
+      const next = { ...initialForm, item_code: item.item_code };
+      formRef.current = next;
+      changeItem(item.item_code);
+      setScanNotice({ type: 'success', message: `${label} selected. Choose the stores${item.is_batch ? ' and batch' : ''}.` });
+      return;
+    }
+
+    const storeId = Number(current.from_store_id);
+    const onHand = !storeId
+      ? null
+      : item.is_batch
+        ? current.batch_no
+          ? item.batches.find((batch) => batch.store_id === storeId && batch.batch_no === current.batch_no)?.qty_in_hand ?? 0
+          : null
+        : item.stores.find((store) => store.store_id === storeId)?.qty_in_hand ?? 0;
+    const qty = Number(current.qty || 0) + 1;
+
+    if (onHand !== null && qty > onHand) {
+      setScanNotice({ type: 'error', message: `Only ${onHand} of ${label} available in the source store.` });
+      return;
+    }
+
+    const next = { ...current, qty: String(qty) };
+    formRef.current = next;
+    setForm(next);
+    setScanNotice({
+      type: 'success',
+      message: `${label}: quantity is now ${qty}.${item.is_serialized ? ' Select the serial number for the new unit.' : ''}`,
+    });
+  };
+
   const submitTransfer = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -157,13 +216,27 @@ export default function StockTransfersPage() {
             <EmptyState message="Receive opening stock before making a transfer." />
           ) : (
             <form onSubmit={submitTransfer} className="space-y-5">
+              <div>
+                <span className="mb-1 block text-xs font-semibold text-slate-600">Scan barcode</span>
+                <ScanInput onScan={handleScan} placeholder="Scan barcode + Enter to select the item" />
+                {scanNotice && (
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className={`mt-1.5 text-xs font-semibold ${scanNotice.type === 'error' ? 'text-rose-600' : 'text-emerald-600'}`}
+                  >
+                    {scanNotice.message}
+                  </p>
+                )}
+              </div>
+
               <Field label="Item">
                 <SearchSelect
                   value={form.item_code}
                   onChange={changeItem}
-                  options={transferableItems.map((item) => ({ value: item.item_code, label: `${item.item_code} - ${item.item_description}`, description: `${item.total_qty} available` }))}
+                  options={transferableItems.map((item) => ({ value: item.item_code, label: `${item.item_code} - ${item.item_description}`, description: `${item.total_qty} available`, keywords: item.barcode }))}
                   placeholder="Select item"
-                  searchPlaceholder="Search by code or description..."
+                  searchPlaceholder="Search by code, description or barcode..."
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm"
                   required
                 />
