@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   PackageCheck,
   Plus,
+  Printer,
   RefreshCcw,
   Search,
   Trash2,
@@ -56,6 +57,7 @@ interface ReceiptLineForm {
   discount_type: DiscountType;
   batch_no: string;
   serial_numbers: string;
+  auto_serial: boolean;
 }
 
 interface ReceiptForm {
@@ -101,6 +103,7 @@ function blankReceiptLine(): ReceiptLineForm {
     discount_type: 'amount',
     batch_no: '',
     serial_numbers: '',
+    auto_serial: true,
   };
 }
 
@@ -136,6 +139,14 @@ function updateSerialInput(value: string, qty: string, freeQty: string, index: n
   serials[index] = serialNo;
 
   return serials.filter(Boolean).join('\n');
+}
+
+function hasSerialLabels(receipt: PurchaseReceipt): boolean {
+  return receipt.details.some((detail) => (detail.serial_numbers?.length ?? 0) > 0);
+}
+
+function openBarcodeLabels(receiptId: number, autoPrint = false) {
+  window.open(`/dashboard/purchases/${receiptId}/barcodes${autoPrint ? '?auto=1' : ''}`, '_blank');
 }
 
 /** Enter in a serial box (e.g. from a scanner) moves to the next serial box instead of posting the GRN. */
@@ -211,6 +222,8 @@ export default function PurchasesPage() {
     type: 'success' | 'error';
     message: string;
   } | null>(null);
+  // GRN just posted with serialized lines, so the notice can offer its barcode labels.
+  const [labelReceiptId, setLabelReceiptId] = useState<number | null>(null);
   const [scanNotice, setScanNotice] = useState<ScanOutcome | null>(null);
   // Latest committed form for the scan handler, so fast scans build on each other in order.
   const formRef = useRef(form);
@@ -473,6 +486,15 @@ export default function PurchasesPage() {
     }));
   };
 
+  const toggleAutoSerial = (key: number, autoSerial: boolean) => {
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((line) =>
+        line.key === key ? { ...line, auto_serial: autoSerial } : line
+      ),
+    }));
+  };
+
   /** Opens the item form from a line's item picker, pre-filled with what was searched. */
   const openNewItem = (lineKey: number, query: string) => {
     // A scanned or typed number is a barcode; anything else starts the description.
@@ -522,9 +544,10 @@ export default function PurchasesPage() {
     event.preventDefault();
     setSaving(true);
     setNotice(null);
+    setLabelReceiptId(null);
 
     try {
-      await api.post('/v1/purchase-receipts', {
+      const response = await api.post<PurchaseReceipt>('/v1/purchase-receipts', {
         invoice_date: form.invoice_date,
         reference_no: form.reference_no || null,
         supplier_code: form.supplier_code,
@@ -546,7 +569,8 @@ export default function PurchasesPage() {
             discount: numeric(line.discount),
             discount_type: line.discount_type,
             batch_no: item?.is_batch ? line.batch_no : null,
-            serial_numbers: item?.is_serialized
+            auto_serial: Boolean(item?.is_serialized && line.auto_serial),
+            serial_numbers: item?.is_serialized && !line.auto_serial
               ? parseSerialNumbers(line.serial_numbers)
               : [],
           };
@@ -564,9 +588,13 @@ export default function PurchasesPage() {
 
       setShowForm(false);
       await loadData();
+      const receipt = response.data;
+      setLabelReceiptId(receipt && hasSerialLabels(receipt) ? receipt.id : null);
       setNotice({
         type: 'success',
-        message: 'Purchase receipt posted and stock updated successfully.',
+        message: receipt?.Invoice_no
+          ? `Purchase receipt ${receipt.Invoice_no} posted and stock updated successfully.`
+          : 'Purchase receipt posted and stock updated successfully.',
       });
     } catch (error) {
       setNotice({
@@ -697,7 +725,23 @@ export default function PurchasesPage() {
         }
       />
 
-      {notice && <OperationNotice type={notice.type}>{notice.message}</OperationNotice>}
+      {notice && (
+        <OperationNotice type={notice.type}>
+          <span className="flex flex-wrap items-center gap-3">
+            <span>{notice.message}</span>
+            {notice.type === 'success' && labelReceiptId && (
+              <button
+                type="button"
+                onClick={() => openBarcodeLabels(labelReceiptId, true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-700"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Print Barcode Labels
+              </button>
+            )}
+          </span>
+        </OperationNotice>
+      )}
 
       {(suppliers.length === 0 || items.length === 0 || stores.length === 0) && !loading && (
         <OperationNotice type="error">
@@ -820,6 +864,16 @@ export default function PurchasesPage() {
                               Edit {detail.Item_code}
                             </button>
                           ))}
+                          {hasSerialLabels(receipt) && (
+                            <button
+                              type="button"
+                              onClick={() => openBarcodeLabels(receipt.id)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                            >
+                              <Printer className="h-3.5 w-3.5" />
+                              Barcode Labels
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>
@@ -1109,9 +1163,23 @@ export default function PurchasesPage() {
                           )}
                           {item.is_serialized && (
                             <OperationField
-                              label={`Serial Numbers (${(Number(line.qty) || 0) + (Number(line.free_qty) || 0)} required)`}
+                              label={line.auto_serial ? 'Serial Numbers' : `Serial Numbers (${(Number(line.qty) || 0) + (Number(line.free_qty) || 0)} required)`}
                               className={item.is_batch ? '' : 'md:col-span-2 xl:col-span-3'}
                             >
+                              <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={line.auto_serial}
+                                  onChange={(event) => toggleAutoSerial(line.key, event.target.checked)}
+                                  className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                                />
+                                Auto-generate serial numbers
+                              </label>
+                              {line.auto_serial ? (
+                                <p className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 px-4 py-3 text-xs text-indigo-700">
+                                  {(Number(line.qty) || 0) + (Number(line.free_qty) || 0)} serial numbers ({line.item_code}-000001 format) will be generated when the GRN is posted, ready for barcode label printing.
+                                </p>
+                              ) : (
                               <div data-serial-group className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                 {serialInputRows(line.serial_numbers, line.qty, line.free_qty).map((serialNo, serialIndex) => (
                                   <input
@@ -1132,6 +1200,7 @@ export default function PurchasesPage() {
                                   />
                                 ))}
                               </div>
+                              )}
                             </OperationField>
                           )}
                         </div>

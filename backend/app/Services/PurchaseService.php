@@ -22,7 +22,8 @@ class PurchaseService
     public function __construct(
         private readonly StockService $stockService,
         private readonly AccountingService $accountingService,
-        private readonly ChequeEntryService $chequeEntryService
+        private readonly ChequeEntryService $chequeEntryService,
+        private readonly SerialNumberService $serialNumberService
     ) {}
 
     public function createOrder(array $data, User $user): TPurchaseOrderSum
@@ -246,7 +247,9 @@ class PurchaseService
                     'net_value' => $netValue,
                     'batch_no' => $line['batch_no'] ?? null,
                     'price_mode' => $line['price_mode'] ?? ($item->default_batch_price_mode ?: 'batch'),
-                    'serial_numbers' => $line['serial_numbers'] ?? [],
+                    'serial_numbers' => $item->is_serialized && ! empty($line['auto_serial'])
+                        ? $this->serialNumberService->generate($item->item_code, $user->BC, $receivedQty)
+                        : ($line['serial_numbers'] ?? []),
                 ];
                 $grossAmount += $lineGross;
             }
