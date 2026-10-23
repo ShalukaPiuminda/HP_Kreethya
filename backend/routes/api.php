@@ -30,6 +30,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/user', [App\Http\Controllers\Api\V1\Auth\AuthController::class, 'user']);
     Route::get('/v1/features', [App\Http\Controllers\Api\V1\DeveloperController::class, 'enabledFeatures']);
 
+    // Help desk: support requests forwarded to the vendor's Task Manager
+    Route::get('/v1/help-desk/meta', [App\Http\Controllers\Api\V1\HelpDeskController::class, 'meta'])
+        ->middleware('role.permission:help-desk,can_read');
+    Route::get('/v1/help-desk/requests', [App\Http\Controllers\Api\V1\HelpDeskController::class, 'index'])
+        ->middleware('role.permission:help-desk,can_read');
+    Route::get('/v1/help-desk/requests/{id}', [App\Http\Controllers\Api\V1\HelpDeskController::class, 'show'])
+        ->whereNumber('id')
+        ->middleware('role.permission:help-desk,can_read');
+    Route::post('/v1/help-desk/requests', [App\Http\Controllers\Api\V1\HelpDeskController::class, 'store'])
+        ->middleware(['role.permission:help-desk,can_create', 'throttle:10,1']);
+
     // Developer (vendor) controls: paid features & SMS setup
     Route::middleware('developer')->group(function () {
         Route::get('/v1/developer/features', [App\Http\Controllers\Api\V1\DeveloperController::class, 'features']);

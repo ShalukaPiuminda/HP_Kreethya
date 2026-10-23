@@ -90,6 +90,7 @@ class DatabaseSeeder extends Seeder
             'sales-return-reasons',
             'sms',
             'reminder-letters',
+            'help-desk',
         ];
 
         foreach ($modules as $module) {
