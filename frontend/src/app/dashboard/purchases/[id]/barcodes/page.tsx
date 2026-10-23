@@ -9,13 +9,15 @@ import { formatCurrency } from '@/lib/inventory';
 import type { PurchaseReceipt } from '@/lib/purchases';
 import { BarcodeSvg } from '@/components/barcode-svg';
 import {
-  buildSerialLabels,
+  buildLabels,
   DEFAULT_LABEL_PRESET_ID,
+  defaultLabelCount,
+  isSerialDetail,
   LABEL_SHEET_PRESETS,
   loadSavedPresetId,
   paginateLabels,
   savePresetId,
-  type SerialLabel,
+  type BarcodeLabelData,
 } from '@/lib/barcode-labels';
 
 export default function GrnBarcodeLabelsPage() {
@@ -25,6 +27,8 @@ export default function GrnBarcodeLabelsPage() {
   const [presetId, setPresetId] = useState(DEFAULT_LABEL_PRESET_ID);
   const [startPosition, setStartPosition] = useState(1);
   const [selectedDetailIds, setSelectedDetailIds] = useState<Set<number>>(new Set());
+  // Label copies for non-serial lines, keyed by detail id (defaults to qty + free qty).
+  const [copies, setCopies] = useState<Record<number, number>>({});
   const [showPrice, setShowPrice] = useState(true);
   const [showBatch, setShowBatch] = useState(true);
   const hasPrinted = useRef(false);
@@ -37,11 +41,7 @@ export default function GrnBarcodeLabelsPage() {
         const response = await api.get<PurchaseReceipt>(`/v1/purchase-receipts/${params.id}`);
         const loaded = response.data ?? null;
         setReceipt(loaded);
-        setSelectedDetailIds(new Set(
-          (loaded?.details ?? [])
-            .filter((detail) => (detail.serial_numbers?.length ?? 0) > 0)
-            .map((detail) => detail.id)
-        ));
+        setSelectedDetailIds(new Set((loaded?.details ?? []).map((detail) => detail.id)));
       } catch (loadError) {
         setError(getApiErrorMessage(loadError, 'Unable to load the GRN for barcode labels.'));
       }
@@ -50,15 +50,11 @@ export default function GrnBarcodeLabelsPage() {
     return () => window.clearTimeout(timer);
   }, [params.id]);
 
-  const serialDetails = useMemo(
-    () => (receipt?.details ?? []).filter((detail) => (detail.serial_numbers?.length ?? 0) > 0),
-    [receipt]
-  );
   const preset = LABEL_SHEET_PRESETS.find((candidate) => candidate.id === presetId) ?? LABEL_SHEET_PRESETS[0];
   const perPage = preset.columns * preset.rows;
   const labels = useMemo(
-    () => (receipt ? buildSerialLabels(receipt, selectedDetailIds) : []),
-    [receipt, selectedDetailIds]
+    () => (receipt ? buildLabels(receipt, selectedDetailIds, copies) : []),
+    [receipt, selectedDetailIds, copies]
   );
   const pages = useMemo(
     () => paginateLabels(labels, preset, startPosition),
@@ -168,24 +164,42 @@ export default function GrnBarcodeLabelsPage() {
             </label>
           </div>
 
-          {serialDetails.length === 0 ? (
-            <p className="mt-4 text-slate-500">This GRN has no serialized items, so there are no labels to print.</p>
-          ) : (
-            <div className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-100">
-              {serialDetails.map((detail) => (
-                <label key={detail.id} className="flex items-center gap-3 px-3 py-2">
+          <div className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-100">
+            {receipt.details.map((detail) => {
+              const serial = isSerialDetail(detail);
+              return (
+                <div key={detail.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
                   <input
                     type="checkbox"
                     checked={selectedDetailIds.has(detail.id)}
                     onChange={(event) => toggleDetail(detail.id, event.target.checked)}
+                    aria-label={`Print labels for ${detail.Item_code}`}
                   />
                   <span className="font-mono text-xs font-semibold text-slate-700">{detail.Item_code}</span>
                   <span className="min-w-0 flex-1 truncate text-slate-600">{detail.Item_description}</span>
-                  <span className="text-xs font-semibold text-slate-500">{detail.serial_numbers?.length ?? 0} labels</span>
-                </label>
-              ))}
-            </div>
-          )}
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${serial ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
+                    {serial ? 'Serial barcodes' : `Item barcode: ${detail.item?.barcode || detail.Item_code}`}
+                  </span>
+                  {serial ? (
+                    <span className="w-20 text-right text-xs font-semibold text-slate-500">{detail.serial_numbers?.length ?? 0} labels</span>
+                  ) : (
+                    <label className="inline-flex w-20 items-center justify-end gap-1 text-xs text-slate-500">
+                      <input
+                        type="number"
+                        min={0}
+                        value={copies[detail.id] ?? defaultLabelCount(detail)}
+                        onChange={(event) =>
+                          setCopies((current) => ({ ...current, [detail.id]: Math.max(0, Number(event.target.value) || 0) }))
+                        }
+                        className="w-14 rounded-lg border border-slate-200 px-2 py-1 text-right"
+                      />
+                      labels
+                    </label>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -213,7 +227,7 @@ export default function GrnBarcodeLabelsPage() {
             {cells.map((label, cellIndex) =>
               label ? (
                 <BarcodeLabel
-                  key={`${label.serial}-${cellIndex}`}
+                  key={`${label.barcode}-${cellIndex}`}
                   label={label}
                   compact={compact}
                   showPrice={showPrice}
@@ -236,7 +250,7 @@ function BarcodeLabel({
   showPrice,
   showBatch,
 }: {
-  label: SerialLabel;
+  label: BarcodeLabelData;
   compact: boolean;
   showPrice: boolean;
   showBatch: boolean;
@@ -252,8 +266,10 @@ function BarcodeLabel({
         <span className="truncate">{label.itemCode}</span>
         {showBatch && label.batchNo && <span className="truncate">B: {label.batchNo}</span>}
       </div>
-      <BarcodeSvg value={label.serial} className={`mt-[0.5mm] w-full ${compact ? 'h-[7mm]' : 'h-[11mm]'} shrink-0`} />
-      <div className="text-center font-mono font-semibold tracking-wide">{label.serial}</div>
+      <BarcodeSvg value={label.barcode} className={`mt-[0.5mm] w-full ${compact ? 'h-[7mm]' : 'h-[11mm]'} shrink-0`} />
+      <div className="text-center font-mono font-semibold tracking-wide">
+        {label.serial ? `S/N ${label.serial}` : label.barcode}
+      </div>
       <div className="flex items-end justify-between gap-1">
         <span className={`truncate text-slate-600 ${compact ? 'text-[5px]' : 'text-[6px]'}`}>{label.grnNo}</span>
         {showPrice && label.price > 0 && (
