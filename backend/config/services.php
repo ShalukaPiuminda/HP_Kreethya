@@ -45,6 +45,13 @@ return [
         'branch' => env('DEVELOPER_BC'),
     ],
 
+    // Vendor Task Manager that receives help-desk requests. The key is issued
+    // per client from Task Manager -> Customers -> Help Desk Key.
+    'task_manager' => [
+        'url' => env('TASK_MANAGER_API_URL'),
+        'key' => env('TASK_MANAGER_API_KEY'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

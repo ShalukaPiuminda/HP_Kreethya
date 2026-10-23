@@ -122,12 +122,14 @@ class ApiClient {
   private async request<T>(
     method: string,
     path: string,
-    body?: Record<string, unknown>
+    body?: Record<string, unknown> | FormData
   ): Promise<ApiResponse<T>> {
+    const isForm = body instanceof FormData;
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'Content-Type': 'application/json',
     };
+    // FormData sets its own multipart Content-Type (with the boundary).
+    if (!isForm) headers['Content-Type'] = 'application/json';
 
     const token = this.getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -138,7 +140,7 @@ class ApiClient {
       response = await fetch(`${this.baseUrl}${path}`, {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined,
+        body: isForm ? body : body ? JSON.stringify(body) : undefined,
       });
     } catch {
       throw new ApiError(
@@ -245,6 +247,11 @@ class ApiClient {
 
   async post<T = unknown>(path: string, body: Record<string, unknown>) {
     return this.request<T>('POST', path, body);
+  }
+
+  /** POST multipart form data (file uploads). */
+  async postForm<T = unknown>(path: string, form: FormData) {
+    return this.request<T>('POST', path, form);
   }
 
   async put<T = unknown>(path: string, body: Record<string, unknown>) {

@@ -55,6 +55,7 @@ import {
   KeyRound,
   LockKeyhole,
   MessageSquareText,
+  LifeBuoy,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
@@ -173,6 +174,10 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Report Builder', href: '/dashboard/report-builder', icon: FileCode2, developerOnly: true },
       { label: 'SMS Notifications', href: '/dashboard/sms', icon: MessageSquareText, module: 'sms', feature: 'sms' },
     ],
+  },
+  {
+    label: 'Support',
+    items: [{ label: 'Help Desk', href: '/dashboard/help-desk', icon: LifeBuoy, module: 'help-desk' }],
   },
   {
     label: 'Developer',
