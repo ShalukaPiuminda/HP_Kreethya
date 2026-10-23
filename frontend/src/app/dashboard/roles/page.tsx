@@ -306,6 +306,12 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
         coverage: ['User accounts'],
       },
       {
+        module: 'help-desk',
+        label: 'Help Desk',
+        description: 'Support requests sent to the system provider.',
+        coverage: ['View request status (read)', 'Submit new requests (create)'],
+      },
+      {
         module: 'settings',
         label: 'Settings',
         description: 'Reserved settings access for future ERP controls.',
