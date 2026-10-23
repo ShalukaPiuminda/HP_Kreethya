@@ -147,6 +147,7 @@ class PurchaseReceiptController extends BaseController
             'items.*.discount' => ['nullable', 'numeric', 'min:0'],
             'items.*.discount_type' => ['nullable', Rule::in(['amount', 'percent'])],
             'items.*.batch_no' => ['nullable', 'string', 'max:50'],
+            'items.*.auto_serial' => ['nullable', 'boolean'],
             'items.*.serial_numbers' => ['nullable', 'array'],
             'items.*.serial_numbers.*' => ['required', 'string', 'max:100', 'distinct'],
             'cheque' => ['nullable', 'array'],
