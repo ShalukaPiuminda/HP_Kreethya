@@ -1039,6 +1039,7 @@ class ReportingService
             'SAL-RET' => 'Sales return',
             'HP-SALE' => 'Hire purchase issue',
             'HP-RET' => 'Hire purchase return',
+            'ADJ' => 'Stock adjustment',
             default => $transCode,
         };
     }

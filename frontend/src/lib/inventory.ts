@@ -60,6 +60,35 @@ export interface StockMovement {
   store?: Store;
 }
 
+export type AdjustmentReason = 'COUNT_CORRECTION' | 'DAMAGED' | 'LOST' | 'EXPIRED' | 'FOUND' | 'OTHER';
+
+export const ADJUSTMENT_REASONS: { value: AdjustmentReason; label: string }[] = [
+  { value: 'COUNT_CORRECTION', label: 'Stock count correction' },
+  { value: 'DAMAGED', label: 'Damaged' },
+  { value: 'LOST', label: 'Lost / Missing' },
+  { value: 'EXPIRED', label: 'Expired' },
+  { value: 'FOUND', label: 'Found' },
+  { value: 'OTHER', label: 'Other' },
+];
+
+export interface StockAdjustment {
+  id: number;
+  trans_no: string;
+  item_code: string;
+  item_description: string | null;
+  store_id: number;
+  store_name: string | null;
+  batch_no: string | null;
+  old_qty: number;
+  new_qty: number;
+  diff_qty: number;
+  reason: AdjustmentReason;
+  note: string;
+  serial_numbers: string[] | null;
+  UID: string;
+  created_at: string;
+}
+
 export function parseSerialNumbers(value: string): string[] {
   return value
     .split(/[\n,]+/)

@@ -126,6 +126,12 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
         coverage: ['Items', 'Stock levels', 'Stock transfers', 'Reorder alerts', 'Opening stock'],
       },
       {
+        module: 'stock-adjustments',
+        label: 'Stock Adjustments',
+        description: 'Correct stock to a physical count with a required reason and note.',
+        coverage: ['Stock adjustments', 'Adjustment log'],
+      },
+      {
         module: 'suppliers',
         label: 'Suppliers',
         description: 'Supplier master setup and supplier lookups.',
