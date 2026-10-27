@@ -125,12 +125,18 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
         description: 'Item master, stock operations, and batch visibility.',
         coverage: ['Items', 'Stock levels', 'Stock transfers', 'Reorder alerts', 'Opening stock'],
       },
-      {
-        module: 'price-revisions',
-        label: 'Price Revisions',
-        description: 'Change batch and standard sales prices with a reason and full history.',
-        coverage: ['Price history (read)', 'Sales price changes (create)', 'Purchase price changes and reversals stay Super Admin only'],
-      },
+          {
+      module: 'price-revisions',
+      label: 'Price Revisions',
+      description: 'Change batch and standard sales prices with a reason and full history.',
+      coverage: ['Price history (read)', 'Sales price changes (create)', 'Purchase price changes and reversals stay Super Admin only'],
+    },
+    {
+      module: 'stock-adjustments',
+      label: 'Stock Adjustments',
+      description: 'Correct stock to a physical count with a required reason and note.',
+      coverage: ['Stock adjustments', 'Adjustment log'],
+    },
       {
         module: 'suppliers',
         label: 'Suppliers',

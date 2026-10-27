@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Item;
 use App\Models\ItemBatch;
 use App\Models\SerialEditAudit;
+use App\Models\StockAdjustment;
 use App\Models\Store;
 use App\Models\TItemMovement;
 use App\Models\TItemSerialMovement;
@@ -517,6 +518,109 @@ class StockService
             }
 
             return $serialNumbers;
+        });
+    }
+
+    /**
+     * Set an item's stock in one store (and batch) to a counted quantity.
+     * The difference is posted as an ADJ movement and recorded in stock_adjustments.
+     */
+    public function adjustStock(
+        string $transNo,
+        string $itemCode,
+        int $storeId,
+        ?string $batchNo,
+        int $newQty,
+        int $expectedOldQty,
+        string $reason,
+        string $note,
+        ?array $serialNumbers,
+        string $BC,
+        string $UID
+    ): StockAdjustment {
+        return DB::transaction(function () use ($transNo, $itemCode, $storeId, $batchNo, $newQty, $expectedOldQty, $reason, $note, $serialNumbers, $BC, $UID) {
+            $item = $this->findBranchItem($itemCode, $BC);
+            $this->findBranchStore($storeId, $BC);
+
+            if ($newQty < 0) {
+                throw new \InvalidArgumentException('Counted quantity cannot be negative.');
+            }
+
+            $batch = null;
+            if ($item->is_batch) {
+                if (blank($batchNo)) {
+                    throw new \InvalidArgumentException('A batch number is required for batch-tracked items.');
+                }
+
+                $batch = ItemBatch::where('batch_no', $batchNo)
+                    ->where('item_code', $itemCode)
+                    ->where('store_id', $storeId)
+                    ->where('BC', $BC)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$batch) {
+                    throw new \RuntimeException("Batch {$batchNo} was not found in the selected store.");
+                }
+
+                $currentQty = (int) $batch->qty_in_hand;
+            } else {
+                $currentQty = $this->storeQuantity($itemCode, $storeId, $BC);
+            }
+
+            if ($currentQty !== $expectedOldQty) {
+                throw new \RuntimeException("Stock changed since you loaded it (now {$currentQty}). Please reload and try again.");
+            }
+
+            $diff = $newQty - $currentQty;
+            if ($diff === 0) {
+                throw new \InvalidArgumentException('Counted quantity is the same as current stock. Nothing to adjust.');
+            }
+
+            $serialNumbers = $item->is_serialized ? array_values($serialNumbers ?? []) : null;
+
+            if ($diff > 0) {
+                $this->receiveStock(
+                    $transNo,
+                    'ADJ',
+                    $itemCode,
+                    $batchNo,
+                    $storeId,
+                    $diff,
+                    (float) ($batch?->purchase_price ?? $item->standard_purchase_price ?? 0),
+                    (float) ($batch?->sales_price ?? $item->standard_sales_price ?? 0),
+                    $BC,
+                    $UID,
+                    $serialNumbers
+                );
+            } else {
+                $this->dispatchStock(
+                    $transNo,
+                    'ADJ',
+                    $itemCode,
+                    $batchNo,
+                    $storeId,
+                    abs($diff),
+                    $BC,
+                    $UID,
+                    $serialNumbers
+                );
+            }
+
+            return StockAdjustment::create([
+                'trans_no' => $transNo,
+                'item_code' => $itemCode,
+                'store_id' => $storeId,
+                'batch_no' => $item->is_batch ? $batchNo : null,
+                'old_qty' => $currentQty,
+                'new_qty' => $newQty,
+                'diff_qty' => $diff,
+                'reason' => $reason,
+                'note' => $note,
+                'serial_numbers' => $serialNumbers ?: null,
+                'BC' => $BC,
+                'UID' => $UID,
+            ]);
         });
     }
 

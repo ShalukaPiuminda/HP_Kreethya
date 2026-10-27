@@ -23,8 +23,11 @@ export const LABEL_SHEET_PRESETS: LabelSheetPreset[] = [
 
 export const DEFAULT_LABEL_PRESET_ID = 'a4-24';
 
-export interface SerialLabel {
-  serial: string;
+export interface BarcodeLabelData {
+  /** Value encoded in the barcode: the unit's serial, or the item barcode / item code. */
+  barcode: string;
+  /** Set only for serialized units. */
+  serial: string | null;
   itemCode: string;
   description: string;
   batchNo: string | null;
@@ -32,21 +35,47 @@ export interface SerialLabel {
   grnNo: string;
 }
 
-/** One label per serial number on the selected GRN lines. */
-export function buildSerialLabels(receipt: PurchaseReceipt, selectedDetailIds: Set<number>): SerialLabel[] {
+type ReceiptDetail = PurchaseReceipt['details'][number];
+
+export function isSerialDetail(detail: ReceiptDetail): boolean {
+  return (detail.serial_numbers?.length ?? 0) > 0;
+}
+
+/** Labels a line prints by default: one per serial, or one per received unit (qty + free). */
+export function defaultLabelCount(detail: ReceiptDetail): number {
+  return isSerialDetail(detail)
+    ? detail.serial_numbers?.length ?? 0
+    : Math.max(0, numeric(detail.QTY) + numeric(detail.free_qty));
+}
+
+/**
+ * Serialized lines: one label per serial, barcode = serial number.
+ * Other lines: `copies` labels (default qty + free), barcode = item barcode, else item code.
+ */
+export function buildLabels(
+  receipt: PurchaseReceipt,
+  selectedDetailIds: Set<number>,
+  copies: Record<number, number>
+): BarcodeLabelData[] {
   return receipt.details
     .filter((detail) => selectedDetailIds.has(detail.id))
-    .flatMap((detail) => {
-      const price = numeric(detail.Sales_price) || numeric(detail.item?.standard_sales_price);
-
-      return (detail.serial_numbers ?? []).map((serial) => ({
-        serial,
+    .flatMap((detail): BarcodeLabelData[] => {
+      const base = {
         itemCode: detail.Item_code,
         description: detail.Item_description || detail.item?.item_description || detail.Item_code,
         batchNo: detail.batch_no || null,
-        price,
+        price: numeric(detail.Sales_price) || numeric(detail.item?.standard_sales_price),
         grnNo: receipt.Invoice_no,
-      }));
+      };
+
+      if (isSerialDetail(detail)) {
+        return (detail.serial_numbers ?? []).map((serial) => ({ ...base, barcode: serial, serial }));
+      }
+
+      const count = Math.max(0, Math.floor(copies[detail.id] ?? defaultLabelCount(detail)));
+      const barcode = detail.item?.barcode || detail.Item_code;
+
+      return Array.from({ length: count }, () => ({ ...base, barcode, serial: null }));
     });
 }
 
@@ -55,14 +84,14 @@ export function buildSerialLabels(receipt: PurchaseReceipt, selectedDetailIds: S
  * so a partly used sticker sheet can be fed back into the printer.
  */
 export function paginateLabels(
-  labels: SerialLabel[],
+  labels: BarcodeLabelData[],
   preset: LabelSheetPreset,
   startPosition: number
-): (SerialLabel | null)[][] {
+): (BarcodeLabelData | null)[][] {
   const perPage = preset.columns * preset.rows;
   const skip = Math.min(Math.max(Math.floor(startPosition) - 1, 0), perPage - 1);
-  const cells: (SerialLabel | null)[] = [...Array<null>(skip).fill(null), ...labels];
-  const pages: (SerialLabel | null)[][] = [];
+  const cells: (BarcodeLabelData | null)[] = [...Array<null>(skip).fill(null), ...labels];
+  const pages: (BarcodeLabelData | null)[][] = [];
 
   for (let index = 0; index < cells.length; index += perPage) {
     pages.push(cells.slice(index, index + perPage));

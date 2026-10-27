@@ -91,6 +91,7 @@ class DatabaseSeeder extends Seeder
             'sms',
             'reminder-letters',
             'help-desk',
+            'stock-adjustments',
         ];
 
         foreach ($modules as $module) {

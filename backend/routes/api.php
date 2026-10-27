@@ -114,6 +114,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('role.permission:items');
     Route::get('/v1/stock/reorder-alerts', [App\Http\Controllers\Api\V1\StockController::class, 'reorderAlerts'])
         ->middleware('role.permission:items');
+    Route::get('/v1/stock-adjustments', [App\Http\Controllers\Api\V1\StockAdjustmentController::class, 'index'])
+        ->middleware('role.permission:stock-adjustments');
+    Route::post('/v1/stock-adjustments', [App\Http\Controllers\Api\V1\StockAdjustmentController::class, 'store'])
+        ->middleware('role.permission:stock-adjustments');
     Route::get('/v1/stock/{itemCode}', [App\Http\Controllers\Api\V1\StockController::class, 'stockLevel'])
         ->middleware('role.permission:items');
     Route::get('/v1/stock/{itemCode}/batches', [App\Http\Controllers\Api\V1\StockController::class, 'batches'])

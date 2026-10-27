@@ -141,10 +141,6 @@ function updateSerialInput(value: string, qty: string, freeQty: string, index: n
   return serials.filter(Boolean).join('\n');
 }
 
-function hasSerialLabels(receipt: PurchaseReceipt): boolean {
-  return receipt.details.some((detail) => (detail.serial_numbers?.length ?? 0) > 0);
-}
-
 function openBarcodeLabels(receiptId: number, autoPrint = false) {
   window.open(`/dashboard/purchases/${receiptId}/barcodes${autoPrint ? '?auto=1' : ''}`, '_blank');
 }
@@ -222,7 +218,7 @@ export default function PurchasesPage() {
     type: 'success' | 'error';
     message: string;
   } | null>(null);
-  // GRN just posted with serialized lines, so the notice can offer its barcode labels.
+  // GRN just posted, so the notice can offer its barcode labels.
   const [labelReceiptId, setLabelReceiptId] = useState<number | null>(null);
   const [scanNotice, setScanNotice] = useState<ScanOutcome | null>(null);
   // Latest committed form for the scan handler, so fast scans build on each other in order.
@@ -589,7 +585,7 @@ export default function PurchasesPage() {
       setShowForm(false);
       await loadData();
       const receipt = response.data;
-      setLabelReceiptId(receipt && hasSerialLabels(receipt) ? receipt.id : null);
+      setLabelReceiptId(receipt?.id ?? null);
       setNotice({
         type: 'success',
         message: receipt?.Invoice_no
@@ -850,11 +846,11 @@ export default function PurchasesPage() {
                     </td>
                     <td className="px-5 py-4"><StatusPill status={receipt.payment_status} /></td>
                     <td className="px-5 py-4 text-right">
-                      {serializedDetails.length === 0 ? (
-                        <span className="text-xs text-slate-400">No serials</span>
-                      ) : (
-                        <div className="flex flex-col items-end gap-1.5">
-                          {serializedDetails.map((detail) => (
+                      <div className="flex flex-col items-end gap-1.5">
+                        {serializedDetails.length === 0 ? (
+                          <span className="text-xs text-slate-400">No serials</span>
+                        ) : (
+                          serializedDetails.map((detail) => (
                             <button
                               key={detail.id}
                               type="button"
@@ -863,19 +859,17 @@ export default function PurchasesPage() {
                             >
                               Edit {detail.Item_code}
                             </button>
-                          ))}
-                          {hasSerialLabels(receipt) && (
-                            <button
-                              type="button"
-                              onClick={() => openBarcodeLabels(receipt.id)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50"
-                            >
-                              <Printer className="h-3.5 w-3.5" />
-                              Barcode Labels
-                            </button>
-                          )}
-                        </div>
-                      )}
+                          ))
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openBarcodeLabels(receipt.id)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                        >
+                          <Printer className="h-3.5 w-3.5" />
+                          Barcode Labels
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
