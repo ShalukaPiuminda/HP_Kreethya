@@ -14,6 +14,17 @@ use Illuminate\Validation\ValidationException;
 
 class StockService
 {
+    /**
+     * Stock-in transactions whose entered prices update an existing batch. Returns and
+     * transfers bring stock back into a batch at its current prices, so a price revision
+     * made after the original sale or transfer is never overwritten.
+     */
+    private const PRICE_SETTING_TRANS_CODES = ['GRN', 'OPS'];
+
+    public function __construct(private PriceRevisionService $priceRevisionService)
+    {
+    }
+
     public function receiveStock(
         string $transNo,
         string $transCode,
@@ -48,7 +59,8 @@ class StockService
                     ->lockForUpdate()
                     ->first();
 
-                if (!$batch) {
+                $isNewBatch = !$batch;
+                if ($isNewBatch) {
                     $batch = new ItemBatch([
                         'batch_no' => $batchNo,
                         'item_code' => $itemCode,
@@ -58,11 +70,28 @@ class StockService
                     ]);
                 }
 
-                $batch->purchase_price = $purchasePrice;
-                $batch->sales_price = $salesPrice;
+                $oldPurchasePrice = (float) $batch->purchase_price;
+                $oldSalesPrice = (float) $batch->sales_price;
+                $updatesPrices = $isNewBatch || in_array($transCode, self::PRICE_SETTING_TRANS_CODES, true);
+
+                if ($updatesPrices) {
+                    $batch->purchase_price = $purchasePrice;
+                    $batch->sales_price = $salesPrice;
+                }
                 $batch->qty_in_hand = (int) $batch->qty_in_hand + $qty;
                 $batch->UID = $UID;
                 $batch->save();
+
+                if (!$isNewBatch && $updatesPrices) {
+                    $this->priceRevisionService->recordStockPriceChange(
+                        $batch,
+                        $oldPurchasePrice,
+                        $oldSalesPrice,
+                        $transCode,
+                        $transNo,
+                        $UID
+                    );
+                }
             }
 
             $this->recordMovement(
@@ -254,6 +283,9 @@ class StockService
                 'reorder_level' => (int) $item->reorder_level,
                 'standard_purchase_price' => (float) $item->standard_purchase_price,
                 'standard_sales_price' => (float) $item->standard_sales_price,
+                'sales_criteria_enabled' => (bool) $item->sales_criteria_enabled,
+                'min_sales_price' => $item->min_sales_price !== null ? (float) $item->min_sales_price : null,
+                'max_sales_price' => $item->max_sales_price !== null ? (float) $item->max_sales_price : null,
                 'total_qty' => $totalQty,
                 'stock_value' => $stockValue,
                 'is_below_reorder' => $item->reorder_level > 0 && $totalQty <= $item->reorder_level,

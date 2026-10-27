@@ -768,6 +768,7 @@ class ReportDemoDataService
             $deleted['purchase_orders'] = $this->deleteWhereIn('t_purchase_order_sums', 'po_no', $purchaseOrderNos);
             $deleted['item_serial_movements'] = $this->deleteWhereIn('t_item_serial_movements', 'item_code', $itemCodes);
             $deleted['item_movements'] = $this->deleteWhereIn('t_item_movements', 'item_code', $itemCodes);
+            $deleted['price_revisions'] = $this->deleteWhereIn('price_revisions', 'item_code', $itemCodes);
             $deleted['item_batches'] = $this->deleteWhereIn('item_batches', 'item_code', $itemCodes);
             $deleted['customer_ledgers'] = $this->deleteWhereIn('t_customer_account_trances', 'customer_code', $customerCodes);
             $deleted['supplier_ledgers'] = $this->deleteWhereIn('t_sup_purchase_trances', 'supplier', $supplierCodes);

@@ -49,6 +49,8 @@ class SystemBackupService
             'item_batches',
             't_item_movements',
             't_item_serial_movements',
+            'price_revisions',
+            'price_revision_lines',
         ],
         'purchases' => [
             't_purchase_order_sums',
@@ -135,6 +137,8 @@ class SystemBackupService
         't_purchase_order_sums',
         't_item_serial_movements',
         't_item_movements',
+        'price_revision_lines',
+        'price_revisions',
         'item_batches',
         't_customer_account_trances',
         't_sup_purchase_trances',
