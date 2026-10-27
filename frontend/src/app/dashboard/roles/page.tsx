@@ -126,6 +126,12 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
         coverage: ['Items', 'Stock levels', 'Stock transfers', 'Reorder alerts', 'Opening stock'],
       },
       {
+        module: 'price-revisions',
+        label: 'Price Revisions',
+        description: 'Change batch and standard sales prices with a reason and full history.',
+        coverage: ['Price history (read)', 'Sales price changes (create)', 'Purchase price changes and reversals stay Super Admin only'],
+      },
+      {
         module: 'suppliers',
         label: 'Suppliers',
         description: 'Supplier master setup and supplier lookups.',

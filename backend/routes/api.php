@@ -121,6 +121,20 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/stock/{itemCode}/movements', [App\Http\Controllers\Api\V1\StockController::class, 'movements'])
         ->middleware('role.permission:items');
 
+    // Price revisions (purchase price changes and reversals are Super Admin only, checked in the service)
+    Route::get('/v1/price-revisions', [App\Http\Controllers\Api\V1\PriceRevisionController::class, 'index'])
+        ->middleware('role.permission:price-revisions');
+    Route::post('/v1/price-revisions/preview', [App\Http\Controllers\Api\V1\PriceRevisionController::class, 'preview'])
+        ->middleware('role.permission:price-revisions,can_create');
+    Route::post('/v1/price-revisions', [App\Http\Controllers\Api\V1\PriceRevisionController::class, 'store'])
+        ->middleware('role.permission:price-revisions');
+    Route::get('/v1/price-revisions/{id}', [App\Http\Controllers\Api\V1\PriceRevisionController::class, 'show'])
+        ->whereNumber('id')
+        ->middleware('role.permission:price-revisions');
+    Route::post('/v1/price-revisions/{id}/reverse', [App\Http\Controllers\Api\V1\PriceRevisionController::class, 'reverse'])
+        ->whereNumber('id')
+        ->middleware('role.permission:price-revisions');
+
     // Purchases
     Route::get('/v1/purchase-orders/open', [App\Http\Controllers\Api\V1\PurchaseReceiptController::class, 'openOrders'])
         ->middleware('role.permission:purchases');

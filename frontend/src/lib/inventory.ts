@@ -39,6 +39,9 @@ export interface StockItem {
   reorder_level: number;
   standard_purchase_price: number;
   standard_sales_price: number;
+  sales_criteria_enabled?: boolean;
+  min_sales_price?: number | null;
+  max_sales_price?: number | null;
   total_qty: number;
   stock_value: number;
   is_below_reorder: boolean;
@@ -58,6 +61,69 @@ export interface StockMovement {
   qun_out: number;
   serial_numbers?: string[];
   store?: Store;
+}
+
+export type PriceRevisionScope = 'selected' | 'store' | 'all' | 'standard';
+export type PriceRevisionPriceType = 'sales' | 'purchase' | 'both';
+export type PriceRevisionMethod = 'set' | 'amount' | 'percent';
+
+export interface PriceRevisionPreviewLine {
+  target: 'batch' | 'standard';
+  item_batch_id: number | null;
+  batch_no: string | null;
+  store_id: number | null;
+  store_name: string | null;
+  qty_in_hand: number | null;
+  old_purchase_price: number;
+  new_purchase_price: number;
+  old_sales_price: number;
+  new_sales_price: number;
+  errors: string[];
+}
+
+export interface PriceRevisionPreview {
+  item_code: string;
+  item_description: string;
+  lines: PriceRevisionPreviewLine[];
+  can_save: boolean;
+}
+
+export interface PriceRevisionLine {
+  id: number;
+  target: 'batch' | 'standard';
+  item_batch_id: number | null;
+  batch_no: string | null;
+  store_id: number | null;
+  store?: { id: number; name: string } | null;
+  old_purchase_price: string | number;
+  new_purchase_price: string | number;
+  old_sales_price: string | number;
+  new_sales_price: string | number;
+}
+
+export interface PriceRevision {
+  id: number;
+  revision_no: string;
+  item_code: string;
+  item?: { item_code: string; item_description: string } | null;
+  scope: PriceRevisionScope | 'batch';
+  store?: { id: number; name: string } | null;
+  price_type: PriceRevisionPriceType;
+  method: PriceRevisionMethod | 'restore';
+  sales_value: string | number | null;
+  purchase_value: string | number | null;
+  update_standard: boolean;
+  reason: string;
+  source: string;
+  source_no: string | null;
+  status: 'applied' | 'reversed';
+  reverses_id: number | null;
+  reversed_by_revision_id: number | null;
+  reversed_by: string | null;
+  reversed_at: string | null;
+  UID: string;
+  created_at: string;
+  lines: PriceRevisionLine[];
 }
 
 export function parseSerialNumbers(value: string): string[] {

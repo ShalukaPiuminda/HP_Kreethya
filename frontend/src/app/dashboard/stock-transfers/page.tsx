@@ -360,7 +360,7 @@ export default function StockTransfersPage() {
             <h2 className="font-bold text-slate-800">Transfer Rules</h2>
             <ul className="mt-3 space-y-2">
               <li>Source inventory is checked before any movement is recorded.</li>
-              <li>Batch purchase and sales prices are copied to the destination store.</li>
+              <li>Batch prices are copied to a new destination batch. A batch that already exists there keeps its own prices.</li>
               <li>Serialized items require exactly one serial number per unit.</li>
               <li>Both movement entries use the same transfer number for audit tracing.</li>
             </ul>

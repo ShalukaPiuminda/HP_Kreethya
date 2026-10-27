@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -603,6 +604,9 @@ function StockRow({
   onEditSerials: (movement: StockMovement) => void;
   canReceive: boolean;
 }) {
+  const { hasPermission } = useAuth();
+  const canViewPriceHistory = hasPermission('price-revisions', 'can_read');
+
   return (
     <>
       <tr className={item.is_below_reorder ? 'bg-amber-50/40' : 'hover:bg-slate-50/70'}>
@@ -675,6 +679,7 @@ function StockRow({
                             <th className="pb-2 text-right">Qty</th>
                             <th className="pb-2 text-right">Purchase</th>
                             <th className="pb-2 text-right">Sale</th>
+                            {canViewPriceHistory && <th className="pb-2" />}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -685,6 +690,16 @@ function StockRow({
                               <td className="py-2 text-right font-bold">{batch.qty_in_hand}</td>
                               <td className="py-2 text-right">{formatCurrency(batch.purchase_price)}</td>
                               <td className="py-2 text-right">{formatCurrency(batch.sales_price)}</td>
+                              {canViewPriceHistory && (
+                                <td className="py-2 pl-3 text-right">
+                                  <Link
+                                    href={`/dashboard/price-revisions?batch_id=${batch.id}&item_code=${encodeURIComponent(item.item_code)}`}
+                                    className="font-semibold text-indigo-600 hover:underline"
+                                  >
+                                    Price history
+                                  </Link>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
