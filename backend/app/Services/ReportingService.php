@@ -859,6 +859,240 @@ class ReportingService
         ];
     }
 
+    /**
+     * Warranty report: units expiring soon, claims grouped by item, or the full
+     * register of warranty units sold (sales invoices and hire purchase).
+     */
+    public function warranty(User $user, array $filters): array
+    {
+        $view = $filters['view'] ?? 'expiring';
+        $today = now()->startOfDay();
+
+        if ($view === 'claims_by_item') {
+            $from = $filters['from'] ?? null;
+            $to = $filters['to'] ?? null;
+            $claims = DB::table('t_warranty_claims')
+                ->where('BC', $user->BC)
+                ->when($from, fn ($query, $date) => $query->whereDate('claim_date', '>=', $date))
+                ->when($to, fn ($query, $date) => $query->whereDate('claim_date', '<=', $date))
+                ->when($filters['item_code'] ?? null, fn ($query, $code) => $query->where('item_code', $code))
+                ->when($filters['store_id'] ?? null, fn ($query, $id) => $query->where('store_id', $id))
+                ->get(['item_code', 'item_description', 'resolution', 'status', 'qty', 'source_type', 'source_detail_id', 'item_serial_no']);
+            $sold = $this->warrantyLines($user, [
+                'from' => $from,
+                'to' => $to,
+                'item_code' => $filters['item_code'] ?? null,
+                'store_id' => $filters['store_id'] ?? null,
+            ])->groupBy('item_code');
+
+            $rows = $claims->groupBy('item_code')->map(function (Collection $itemClaims, string $itemCode) use ($sold) {
+                $unitsSold = (int) ($sold->get($itemCode)?->sum('qty') ?? 0);
+                $byResolution = fn (string $resolution) => $itemClaims
+                    ->where('resolution', $resolution)
+                    ->where('status', '!=', 'rejected')
+                    ->count();
+                $repeatUnits = $itemClaims
+                    ->groupBy(fn ($claim) => $claim->source_type.'-'.$claim->source_detail_id.'-'.$claim->item_serial_no)
+                    ->filter(fn (Collection $unitClaims) => $unitClaims->count() >= 2)
+                    ->count();
+
+                return [
+                    'item_code' => $itemCode,
+                    'item_description' => $itemClaims->first()->item_description,
+                    'units_sold' => $unitsSold,
+                    'total_claims' => $itemClaims->count(),
+                    'repair' => $byResolution('repair'),
+                    'replace' => $byResolution('replace'),
+                    'refund' => $byResolution('refund'),
+                    'rejected' => $itemClaims
+                        ->filter(fn ($claim) => $claim->status === 'rejected' || $claim->resolution === 'reject')
+                        ->count(),
+                    'open' => $itemClaims->whereIn('status', WarrantyClaimService::CUSTODY_STATUSES)->count(),
+                    'repeat_units' => $repeatUnits,
+                    'claim_rate' => $unitsSold > 0 ? round($itemClaims->sum('qty') / $unitsSold * 100, 1) : null,
+                ];
+            })->sortByDesc('total_claims')->values();
+
+            return [
+                'view' => $view,
+                'summary' => [
+                    'rows' => $rows->count(),
+                    'total_claims' => $rows->sum('total_claims'),
+                    'open' => $rows->sum('open'),
+                    'rejected' => $rows->sum('rejected'),
+                ],
+                'rows' => $rows->all(),
+            ];
+        }
+
+        if ($view === 'expiring') {
+            $days = (int) ($filters['days'] ?? 30);
+            $rows = $this->warrantyLines($user, [
+                'item_code' => $filters['item_code'] ?? null,
+                'store_id' => $filters['store_id'] ?? null,
+                'customer_code' => $filters['customer_code'] ?? null,
+                'search' => $filters['search'] ?? null,
+                'expiry_from' => $today->toDateString(),
+                'expiry_to' => $today->copy()->addDays($days)->toDateString(),
+            ])
+                ->reject(fn (array $row) => $row['status'] === 'Returned')
+                ->sortBy('warranty_expiry_date')
+                ->values();
+
+            return [
+                'view' => $view,
+                'days' => $days,
+                'summary' => [
+                    'rows' => $rows->count(),
+                    'units' => $rows->sum('qty'),
+                    'within_7_days' => $rows->where('days_left', '<=', 7)->count(),
+                ],
+                'rows' => $rows->all(),
+            ];
+        }
+
+        $rows = $this->warrantyLines($user, $filters)
+            ->sortByDesc('sale_date')
+            ->values();
+
+        return [
+            'view' => 'register',
+            'summary' => [
+                'rows' => $rows->count(),
+                'active' => $rows->where('status', 'Active')->count(),
+                'expired' => $rows->where('status', 'Expired')->count(),
+                'claimed' => $rows->where('claims', '>', 0)->count(),
+            ],
+            'rows' => $rows->all(),
+        ];
+    }
+
+    /** Warranty lines from sales invoices and hire purchase, with their current status. */
+    private function warrantyLines(User $user, array $filters): Collection
+    {
+        $from = $filters['from'] ?? null;
+        $to = $filters['to'] ?? null;
+        $search = trim((string) ($filters['search'] ?? ''));
+        $today = now()->toDateString();
+
+        $invoiceLines = DB::table('t_invoice_deils as d')
+            ->join('t_invoice_sums as h', 'h.Invoice_no', '=', 'd.Invoice_no')
+            ->where('d.BC', $user->BC)
+            ->where('d.warranty_enabled', true)
+            ->when($from, fn ($query, $date) => $query->whereDate('h.Invoice_date', '>=', $date))
+            ->when($to, fn ($query, $date) => $query->whereDate('h.Invoice_date', '<=', $date))
+            ->when($filters['expiry_from'] ?? null, fn ($query, $date) => $query->whereDate('d.warranty_expiry_date', '>=', $date))
+            ->when($filters['expiry_to'] ?? null, fn ($query, $date) => $query->whereDate('d.warranty_expiry_date', '<=', $date))
+            ->when($filters['item_code'] ?? null, fn ($query, $code) => $query->where('d.Item_code', $code))
+            ->when($filters['store_id'] ?? null, fn ($query, $id) => $query->where('d.store_id', $id))
+            ->when($filters['customer_code'] ?? null, fn ($query, $code) => $query->where('h.customer_code', $code))
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($nested) use ($search) {
+                    $nested->where('h.Invoice_no', 'like', "%{$search}%")
+                        ->orWhere('h.Customer_Name', 'like', "%{$search}%")
+                        ->orWhere('h.Customer_Phone', 'like', "%{$search}%")
+                        ->orWhere('d.Item_code', 'like', "%{$search}%")
+                        ->orWhere('d.Item_description', 'like', "%{$search}%")
+                        ->orWhere('d.serial_numbers', 'like', "%{$search}%");
+                });
+            })
+            ->get([
+                'd.id',
+                'd.Invoice_no as invoice_no',
+                DB::raw('NULL as agreement_no'),
+                'h.Invoice_date as sale_date',
+                'h.Customer_Name as customer_name',
+                'h.Customer_Phone as customer_phone',
+                'd.Item_code as item_code',
+                'd.Item_description as item_description',
+                'd.serial_numbers',
+                'd.QTY as qty',
+                'd.warranty_months',
+                'd.warranty_expiry_date',
+                DB::raw('(select coalesce(sum(r.qty), 0) from t_sales_return_details r where r.invoice_detail_id = d.id) as returned_qty'),
+            ])
+            ->map(fn ($row) => [...(array) $row, 'source_type' => 'invoice']);
+
+        $hpLines = DB::table('t_hire_purchase_details as d')
+            ->join('t_hire_purchase_sums as h', 'h.invoice_no', '=', 'd.invoice_no')
+            ->where('d.BC', $user->BC)
+            ->where('d.warranty_enabled', true)
+            ->when($from, fn ($query, $date) => $query->whereDate('h.invoice_date', '>=', $date))
+            ->when($to, fn ($query, $date) => $query->whereDate('h.invoice_date', '<=', $date))
+            ->when($filters['expiry_from'] ?? null, fn ($query, $date) => $query->whereDate('d.warranty_expiry_date', '>=', $date))
+            ->when($filters['expiry_to'] ?? null, fn ($query, $date) => $query->whereDate('d.warranty_expiry_date', '<=', $date))
+            ->when($filters['item_code'] ?? null, fn ($query, $code) => $query->where('d.item_code', $code))
+            ->when($filters['store_id'] ?? null, fn ($query, $id) => $query->where('d.store_id', $id))
+            ->when($filters['customer_code'] ?? null, fn ($query, $code) => $query->where('h.customer_code', $code))
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($nested) use ($search) {
+                    $nested->where('h.invoice_no', 'like', "%{$search}%")
+                        ->orWhere('h.agreement_no', 'like', "%{$search}%")
+                        ->orWhere('h.customer_name', 'like', "%{$search}%")
+                        ->orWhere('h.customer_phone', 'like', "%{$search}%")
+                        ->orWhere('d.item_code', 'like', "%{$search}%")
+                        ->orWhere('d.item_description', 'like', "%{$search}%")
+                        ->orWhere('d.serial_numbers', 'like', "%{$search}%");
+                });
+            })
+            ->get([
+                'd.id',
+                'd.invoice_no',
+                'h.agreement_no',
+                'h.invoice_date as sale_date',
+                'h.customer_name',
+                'h.customer_phone',
+                'd.item_code',
+                'd.item_description',
+                'd.serial_numbers',
+                'd.qty',
+                'd.warranty_months',
+                'd.warranty_expiry_date',
+                'd.returned_qty',
+            ])
+            ->map(fn ($row) => [...(array) $row, 'source_type' => 'hp']);
+
+        $lines = $invoiceLines->concat($hpLines);
+        $claims = DB::table('t_warranty_claims')
+            ->where('BC', $user->BC)
+            ->whereIn('source_detail_id', $lines->pluck('id')->unique()->all() ?: [0])
+            ->get(['source_type', 'source_detail_id', 'status', 'replacement_serial_no'])
+            ->groupBy(fn ($claim) => $claim->source_type.'-'.$claim->source_detail_id);
+
+        return $lines->map(function (array $line) use ($claims, $today) {
+            $lineClaims = $claims->get($line['source_type'].'-'.$line['id'], collect());
+            $expiry = substr((string) $line['warranty_expiry_date'], 0, 10);
+
+            $status = match (true) {
+                (int) $line['returned_qty'] >= (int) $line['qty'] => 'Returned',
+                $lineClaims->whereIn('status', WarrantyClaimService::CUSTODY_STATUSES)->isNotEmpty() => 'With us',
+                $expiry < $today => 'Expired',
+                $lineClaims->whereNotNull('replacement_serial_no')->isNotEmpty() => 'Replaced',
+                default => 'Active',
+            };
+
+            return [
+                'source_type' => $line['source_type'],
+                'source_detail_id' => (int) $line['id'],
+                'invoice_no' => $line['invoice_no'],
+                'agreement_no' => $line['agreement_no'],
+                'sale_date' => substr((string) $line['sale_date'], 0, 10),
+                'customer_name' => $line['customer_name'],
+                'customer_phone' => $line['customer_phone'],
+                'item_code' => $line['item_code'],
+                'item_description' => $line['item_description'],
+                'serial_numbers' => $this->decodeJsonList($line['serial_numbers']),
+                'replacement_serials' => $lineClaims->pluck('replacement_serial_no')->filter()->values()->all(),
+                'qty' => (int) $line['qty'],
+                'warranty_months' => (int) $line['warranty_months'],
+                'warranty_expiry_date' => $expiry,
+                'days_left' => (int) now()->startOfDay()->diffInDays(Carbon::parse($expiry), false),
+                'claims' => $lineClaims->count(),
+                'status' => $status,
+            ];
+        });
+    }
+
     public function cashFlow(User $user, array $filters): array
     {
         $from = $filters['from'] ?? null;

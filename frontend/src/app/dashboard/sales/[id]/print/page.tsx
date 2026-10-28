@@ -8,6 +8,7 @@ import { api, getApiErrorMessage } from '@/lib/api';
 import { formatCurrency } from '@/lib/inventory';
 import { displayDate, numeric } from '@/lib/purchases';
 import type { SalesInvoice } from '@/lib/sales';
+import { formatLineWarranty } from '@/lib/warranty';
 
 interface CompanyProfile {
   id: number;
@@ -199,6 +200,9 @@ export default function SalesInvoicePrintPage() {
                   </td>
                   <td className="break-words px-1.5 py-0.5 text-[8px]">
                     {detail.serial_numbers?.join(', ') || detail.batch_no || '—'}
+                    {formatLineWarranty(detail) && (
+                      <div className="font-semibold text-slate-700">{formatLineWarranty(detail)}</div>
+                    )}
                   </td>
                   <td className="px-1.5 py-0.5 text-right">{detail.QTY}</td>
                   <td className="px-1.5 py-0.5 text-right">{formatCurrency(numeric(detail.Unit_price))}</td>

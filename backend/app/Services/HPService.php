@@ -31,7 +31,8 @@ class HPService
     public function __construct(
         private readonly StockService $stockService,
         private readonly AccountingService $accountingService,
-        private readonly ChequeEntryService $chequeEntryService
+        private readonly ChequeEntryService $chequeEntryService,
+        private readonly WarrantyService $warrantyService
     ) {}
 
     public function calculate(array $data, string $branchCode): array
@@ -194,6 +195,11 @@ class HPService
                     'batch_no' => $line['batch_no'],
                     'store_id' => $store->id,
                     'serial_numbers' => $line['serial_numbers'],
+                    ...$this->warrantyService->resolveLineWarranty(
+                        $line['item'],
+                        $data['items'][$line['index']],
+                        $data['invoice_date']
+                    ),
                     'qty' => $line['qty'],
                     'returned_qty' => 0,
                     'unit_price' => $line['unit_price'],
@@ -332,6 +338,7 @@ class HPService
                 }
 
                 $preparedLines[] = [
+                    'index' => $index,
                     'item' => $item,
                     'qty' => $qty,
                     'batch_no' => $line['batch_no'] ?? null,
@@ -431,6 +438,11 @@ class HPService
                     'batch_no' => $line['batch_no'],
                     'store_id' => $store->id,
                     'serial_numbers' => $line['serial_numbers'],
+                    ...$this->warrantyService->resolveLineWarranty(
+                        $line['item'],
+                        $data['items'][$line['index']],
+                        $data['invoice_date']
+                    ),
                     'qty' => $line['qty'],
                     'returned_qty' => 0,
                     'unit_price' => $line['unit_price'],

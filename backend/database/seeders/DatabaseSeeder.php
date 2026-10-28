@@ -92,6 +92,7 @@ class DatabaseSeeder extends Seeder
             'reminder-letters',
             'help-desk',
             'stock-adjustments',
+            'warranty',
         ];
 
         foreach ($modules as $module) {
@@ -108,7 +109,7 @@ class DatabaseSeeder extends Seeder
             );
         }
 
-        foreach (['customers', 'items', 'sales', 'installments'] as $module) {
+        foreach (['customers', 'items', 'sales', 'installments', 'warranty'] as $module) {
             RolePermission::updateOrCreate(
                 ['role_id' => $cashierRole->id, 'module' => $module],
                 [

@@ -36,6 +36,8 @@ export interface StockItem {
   is_batch: boolean;
   default_batch_price_mode?: 'batch' | 'average' | 'last';
   is_serialized: boolean;
+  warranty_enabled?: boolean;
+  warranty_months?: number | null;
   reorder_level: number;
   standard_purchase_price: number;
   standard_sales_price: number;

@@ -139,6 +139,8 @@ class SalesInvoiceController extends BaseController
             'items.*.batch_no' => ['nullable', 'string', 'max:50'],
             'items.*.serial_numbers' => ['nullable', 'array'],
             'items.*.serial_numbers.*' => ['required', 'string', 'max:100', 'distinct'],
+            'items.*.warranty_enabled' => ['sometimes', 'boolean'],
+            'items.*.warranty_months' => ['nullable', 'integer', 'min:1', 'max:120'],
             'cheque' => ['nullable', 'array'],
             'cheque.bank_id' => ['nullable', 'integer'],
             'cheque.bank_branch_id' => ['nullable', 'integer'],

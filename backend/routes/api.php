@@ -238,6 +238,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('/v1/service-tickets', App\Http\Controllers\Api\V1\ServiceTicketController::class)
         ->middleware('role.permission:service');
 
+    // Warranty claims
+    Route::get('/v1/warranty-claims/lookup', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'lookup'])
+        ->middleware('role.permission:warranty');
+    Route::get('/v1/warranty-claims/history', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'history'])
+        ->middleware('role.permission:warranty');
+    Route::post('/v1/warranty-claims/{warrantyClaim}/decide', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'decide'])
+        ->middleware('role.permission:warranty,can_update');
+    Route::post('/v1/warranty-claims/{warrantyClaim}/handover', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'handover'])
+        ->middleware('role.permission:warranty,can_create');
+    Route::post('/v1/warranty-claims/{warrantyClaim}/reject', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'reject'])
+        ->middleware('role.permission:warranty,can_update');
+    Route::apiResource('/v1/warranty-claims', App\Http\Controllers\Api\V1\WarrantyClaimController::class)
+        ->only(['index', 'store', 'show'])
+        ->middleware('role.permission:warranty');
+
     // Financial operations
     Route::get('/v1/finance/options', [App\Http\Controllers\Api\V1\FinancialController::class, 'options'])
         ->middleware('role.permission:accounts');
@@ -284,6 +299,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/reports/sales', [App\Http\Controllers\Api\V1\ReportingController::class, 'sales'])
         ->middleware('role.permission:reports');
     Route::get('/v1/reports/hire-purchase', [App\Http\Controllers\Api\V1\ReportingController::class, 'hirePurchase'])
+        ->middleware('role.permission:reports');
+    Route::get('/v1/reports/warranty', [App\Http\Controllers\Api\V1\ReportingController::class, 'warranty'])
         ->middleware('role.permission:reports');
     Route::get('/v1/reports/cash-flow', [App\Http\Controllers\Api\V1\ReportingController::class, 'cashFlow'])
         ->middleware('role.permission:reports');

@@ -28,6 +28,9 @@ export interface SalesInvoiceDetail {
   discount_value?: string | number;
   Net_value: string | number;
   serial_numbers?: string[] | null;
+  warranty_enabled?: boolean;
+  warranty_months?: number | null;
+  warranty_expiry_date?: string | null;
   item?: {
     item_code: string;
     item_description: string;

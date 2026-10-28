@@ -88,6 +88,9 @@ export interface HpDetail {
   discount_value?: string | number;
   net_value: string | number;
   serial_numbers?: string[] | null;
+  warranty_enabled?: boolean;
+  warranty_months?: number | null;
+  warranty_expiry_date?: string | null;
 }
 
 export interface HpHistory {

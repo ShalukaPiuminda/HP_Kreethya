@@ -39,6 +39,12 @@ import type {
 } from '@/lib/reports';
 import { monthStart, reportToday } from '@/lib/reports';
 import { builtInReport, type BuiltInReportKey } from '@/lib/report-catalog';
+import type {
+  WarrantyClaimsByItemRow,
+  WarrantyLineRow,
+  WarrantyReport,
+  WarrantyReportView,
+} from '@/lib/warranty';
 import { SearchSelect } from '@/components/search-select';
 
 type Tab = BuiltInReportKey;
@@ -54,6 +60,8 @@ type ReportFilters = {
   account_code: string;
   status: string;
   mode: TransactionReportMode;
+  warranty_view: WarrantyReportView;
+  warranty_days: string;
 };
 
 const defaultFilters = (): ReportFilters => ({
@@ -67,6 +75,8 @@ const defaultFilters = (): ReportFilters => ({
   account_code: '1001',
   status: '',
   mode: 'summary',
+  warranty_view: 'expiring',
+  warranty_days: '30',
 });
 
 export default function BuiltInReportPage() {
@@ -86,6 +96,7 @@ export default function BuiltInReportPage() {
   const [salesReport, setSalesReport] = useState<TransactionReport<SalesSummaryRow, SalesDetailRow> | null>(null);
   const [hirePurchaseReport, setHirePurchaseReport] = useState<TransactionReport<HirePurchaseSummaryRow, HirePurchaseDetailRow> | null>(null);
   const [cashFlowReport, setCashFlowReport] = useState<CashFlowReport | null>(null);
+  const [warrantyReport, setWarrantyReport] = useState<WarrantyReport | null>(null);
 
   const [closeOpen, setCloseOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -178,6 +189,20 @@ export default function BuiltInReportPage() {
         });
         const response = await api.get<TransactionReport<HirePurchaseSummaryRow, HirePurchaseDetailRow>>(`/v1/reports/hire-purchase?${params}`);
         setHirePurchaseReport(response.data || null);
+      } else if (tab === 'warranty') {
+        const view = filters.warranty_view;
+        const params = buildQuery({
+          view,
+          days: view === 'expiring' ? filters.warranty_days : '',
+          from: view === 'expiring' ? '' : filters.from,
+          to: view === 'expiring' ? '' : filters.to,
+          search: view === 'claims_by_item' ? '' : filters.search,
+          customer_code: view === 'claims_by_item' ? '' : filters.customer_code,
+          item_code: filters.item_code,
+          store_id: filters.store_id,
+        });
+        const response = await api.get<WarrantyReport>(`/v1/reports/warranty?${params}`);
+        setWarrantyReport(response.data || null);
       } else if (tab === 'cash-in-out') {
         const params = buildQuery({
           from: filters.from,
@@ -264,6 +289,7 @@ export default function BuiltInReportPage() {
           salesReport,
           hirePurchaseReport,
           cashFlowReport,
+          warrantyReport,
         })
       )}
 
@@ -292,12 +318,14 @@ function ReportFiltersPanel({
   options: ReportOptions | null;
   onChange: React.Dispatch<React.SetStateAction<ReportFilters>>;
 }) {
-  const showDateRange = !['trial', 'day-end'].includes(tab);
-  const showSearch = ['stock-in-hand', 'grn', 'sales', 'hire-purchase'].includes(tab);
-  const showItem = ['stock-in-hand', 'bin-card', 'grn', 'sales', 'hire-purchase'].includes(tab);
-  const showStore = ['stock-in-hand', 'bin-card', 'grn', 'sales', 'hire-purchase'].includes(tab);
+  const warrantyExpiring = tab === 'warranty' && filters.warranty_view === 'expiring';
+  const warrantyByItem = tab === 'warranty' && filters.warranty_view === 'claims_by_item';
+  const showDateRange = !['trial', 'day-end'].includes(tab) && !warrantyExpiring;
+  const showSearch = ['stock-in-hand', 'grn', 'sales', 'hire-purchase', 'warranty'].includes(tab) && !warrantyByItem;
+  const showItem = ['stock-in-hand', 'bin-card', 'grn', 'sales', 'hire-purchase', 'warranty'].includes(tab);
+  const showStore = ['stock-in-hand', 'bin-card', 'grn', 'sales', 'hire-purchase', 'warranty'].includes(tab);
   const showSupplier = tab === 'grn';
-  const showCustomer = ['sales', 'hire-purchase'].includes(tab);
+  const showCustomer = ['sales', 'hire-purchase', 'warranty'].includes(tab) && !warrantyByItem;
   const showMode = ['grn', 'sales', 'hire-purchase'].includes(tab);
   const showStatus = tab === 'hire-purchase';
   const showAccount = tab === 'cash-in-out';
@@ -327,6 +355,36 @@ function ReportFiltersPanel({
         )}
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {tab === 'warranty' && (
+          <OperationField label="Report view">
+            <select
+              value={filters.warranty_view}
+              onChange={(event) =>
+                onChange((current) => ({ ...current, warranty_view: event.target.value as WarrantyReportView }))
+              }
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+            >
+              <option value="expiring">Expiring soon</option>
+              <option value="claims_by_item">Claims by item</option>
+              <option value="register">Warranty register</option>
+            </select>
+          </OperationField>
+        )}
+
+        {warrantyExpiring && (
+          <OperationField label="Expiring within">
+            <select
+              value={filters.warranty_days}
+              onChange={(event) => onChange((current) => ({ ...current, warranty_days: event.target.value }))}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+            >
+              {['7', '30', '60', '90'].map((days) => (
+                <option key={days} value={days}>{days} days</option>
+              ))}
+            </select>
+          </OperationField>
+        )}
+
         {showDateRange && (
           <>
             <OperationField label="From">
@@ -488,6 +546,7 @@ function renderTab({
   salesReport,
   hirePurchaseReport,
   cashFlowReport,
+  warrantyReport,
 }: {
   tab: Tab;
   overview: OverviewReport | null;
@@ -499,6 +558,7 @@ function renderTab({
   salesReport: TransactionReport<SalesSummaryRow, SalesDetailRow> | null;
   hirePurchaseReport: TransactionReport<HirePurchaseSummaryRow, HirePurchaseDetailRow> | null;
   cashFlowReport: CashFlowReport | null;
+  warrantyReport: WarrantyReport | null;
 }) {
   if (tab === 'overview') return <Overview report={overview} />;
   if (tab === 'trial') return <TrialBalanceView report={trial} />;
@@ -508,6 +568,7 @@ function renderTab({
   if (tab === 'grn') return <PurchasesView report={purchaseReport} />;
   if (tab === 'sales') return <SalesView report={salesReport} />;
   if (tab === 'hire-purchase') return <HirePurchaseView report={hirePurchaseReport} />;
+  if (tab === 'warranty') return <WarrantyView report={warrantyReport} />;
   return <CashFlowView report={cashFlowReport} />;
 }
 
@@ -1072,6 +1133,123 @@ function HirePurchaseView({ report }: { report: TransactionReport<HirePurchaseSu
         emptyLabel="No hire purchase records found."
         exportName={`hire-purchase-${report.mode}`}
         initialSortKey={report.mode === 'summary' ? 'agreement_no' : 'invoice_no'}
+      />
+    </div>
+  );
+}
+
+const WARRANTY_STATUS_TONES: Record<WarrantyLineRow['status'], string> = {
+  Active: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  'With us': 'bg-amber-50 text-amber-700 ring-amber-200',
+  Replaced: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  Expired: 'bg-slate-100 text-slate-600 ring-slate-200',
+  Returned: 'bg-rose-50 text-rose-700 ring-rose-200',
+};
+
+function WarrantyView({ report }: { report: WarrantyReport | null }) {
+  if (!report) return null;
+
+  if (report.view === 'claims_by_item') {
+    const columns: ReportColumn<WarrantyClaimsByItemRow>[] = [
+      textColumn('item_code', 'Item', (row) => `${row.item_code} ${row.item_description ?? ''}`),
+      numberColumn('units_sold', 'Warranty Units Sold', (row) => row.units_sold),
+      numberColumn('total_claims', 'Claims', (row) => row.total_claims),
+      numberColumn('repair', 'Repair', (row) => row.repair),
+      numberColumn('replace', 'Replace', (row) => row.replace),
+      numberColumn('refund', 'Refund', (row) => row.refund),
+      numberColumn('rejected', 'Rejected', (row) => row.rejected),
+      numberColumn('open', 'With Us', (row) => row.open),
+      numberColumn('repeat_units', 'Repeat Units', (row) => row.repeat_units),
+      {
+        key: 'claim_rate',
+        label: 'Claim Rate',
+        sortable: true,
+        align: 'right',
+        sortValue: (row) => row.claim_rate ?? -1,
+        exportValue: (row) => row.claim_rate ?? '',
+        render: (row) => (row.claim_rate === null ? <span className="text-slate-400">—</span> : <span className="font-semibold">{row.claim_rate}%</span>),
+      },
+    ];
+
+    return (
+      <div className="space-y-4">
+        <section className="grid gap-4 sm:grid-cols-3">
+          <OperationMetric label="Claims" value={String(report.summary.total_claims)} tone="indigo" />
+          <OperationMetric label="With us now" value={String(report.summary.open)} tone="amber" />
+          <OperationMetric label="Rejected" value={String(report.summary.rejected)} tone="rose" />
+        </section>
+        <ReportTable
+          title="Warranty claims by item"
+          subtitle="Claims in the period against warranty units sold in the same period. Items with the highest claim count are listed first."
+          rows={report.rows}
+          columns={columns}
+          emptyLabel="No warranty claims in this period."
+          exportName="warranty-claims-by-item"
+          initialSortKey="total_claims"
+          initialSortDirection="desc"
+        />
+      </div>
+    );
+  }
+
+  const columns: ReportColumn<WarrantyLineRow>[] = [
+    textColumn('warranty_expiry_date', 'Expires', (row) => row.warranty_expiry_date),
+    numberColumn('days_left', 'Days Left', (row) => row.days_left),
+    textColumn('item_code', 'Item', (row) => `${row.item_code} ${row.item_description ?? ''}`),
+    {
+      key: 'serial_numbers',
+      label: 'Serials',
+      sortable: true,
+      sortValue: (row) => row.serial_numbers.join(' '),
+      exportValue: (row) => [...row.serial_numbers, ...row.replacement_serials.map((serial) => `now ${serial}`)].join(' | '),
+      render: (row) => (row.serial_numbers.length
+        ? <CellList items={[...row.serial_numbers, ...row.replacement_serials.map((serial) => `→ ${serial}`)]} />
+        : <span className="text-slate-500">Qty {row.qty}</span>),
+    },
+    textColumn('customer_name', 'Customer', (row) => [row.customer_name, row.customer_phone].filter(Boolean).join(' · ') || '—'),
+    textColumn('invoice_no', 'Sale', (row) => `${row.source_type === 'hp' ? `HP ${row.agreement_no ?? row.invoice_no}` : row.invoice_no} · ${row.sale_date}`),
+    numberColumn('warranty_months', 'Months', (row) => row.warranty_months),
+    numberColumn('claims', 'Claims', (row) => row.claims),
+    {
+      key: 'status',
+      label: 'Status',
+      sortable: true,
+      sortValue: (row) => row.status,
+      exportValue: (row) => row.status,
+      render: (row) => (
+        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${WARRANTY_STATUS_TONES[row.status]}`}>
+          {row.status}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {report.view === 'expiring' ? (
+        <section className="grid gap-4 sm:grid-cols-3">
+          <OperationMetric label={`Expiring in ${report.days} days`} value={String(report.summary.rows)} tone="amber" />
+          <OperationMetric label="Units" value={String(report.summary.units)} />
+          <OperationMetric label="Within 7 days" value={String(report.summary.within_7_days)} tone="rose" />
+        </section>
+      ) : (
+        <section className="grid gap-4 sm:grid-cols-4">
+          <OperationMetric label="Warranty lines" value={String(report.summary.rows)} tone="indigo" />
+          <OperationMetric label="Active" value={String(report.summary.active)} tone="emerald" />
+          <OperationMetric label="Expired" value={String(report.summary.expired)} />
+          <OperationMetric label="Claimed" value={String(report.summary.claimed)} tone="amber" />
+        </section>
+      )}
+      <ReportTable
+        title={report.view === 'expiring' ? `Warranties expiring in the next ${report.days} days` : 'Warranty register'}
+        subtitle={report.view === 'expiring'
+          ? 'Units still under warranty, soonest expiry first. Useful for reminder calls and extended-warranty offers.'
+          : 'Every warranty unit sold in the period (sales invoices and hire purchase) with its current status.'}
+        rows={report.rows}
+        columns={columns}
+        emptyLabel={report.view === 'expiring' ? 'No warranties expire in this window.' : 'No warranty sales in this period.'}
+        exportName={report.view === 'expiring' ? 'warranty-expiring' : 'warranty-register'}
+        initialSortKey="warranty_expiry_date"
       />
     </div>
   );

@@ -281,6 +281,8 @@ class StockService
                 'is_batch' => (bool) $item->is_batch,
                 'default_batch_price_mode' => (string) ($item->default_batch_price_mode ?: 'batch'),
                 'is_serialized' => (bool) $item->is_serialized,
+                'warranty_enabled' => (bool) $item->warranty_enabled,
+                'warranty_months' => $item->warranty_months !== null ? (int) $item->warranty_months : null,
                 'reorder_level' => (int) $item->reorder_level,
                 'standard_purchase_price' => (float) $item->standard_purchase_price,
                 'standard_sales_price' => (float) $item->standard_sales_price,

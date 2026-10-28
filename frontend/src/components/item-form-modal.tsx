@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Barcode, Boxes, Plus, type LucideIcon } from 'lucide-react';
+import { Barcode, Boxes, Plus, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { normalizeBarcode } from '@/lib/barcode';
 import {
@@ -45,6 +45,8 @@ export interface Item {
   is_batch: boolean;
   default_batch_price_mode: 'batch' | 'average' | 'last';
   is_serialized: boolean;
+  warranty_enabled: boolean;
+  warranty_months: number | null;
   reorder_level: number;
   sales_criteria_enabled: boolean;
   min_sales_qty: number | null;
@@ -69,6 +71,8 @@ export interface ItemFormState {
   is_batch: boolean;
   default_batch_price_mode: 'batch' | 'average' | 'last';
   is_serialized: boolean;
+  warranty_enabled: boolean;
+  warranty_months: string;
   reorder_level: string;
   sales_criteria_enabled: boolean;
   min_sales_qty: string;
@@ -91,6 +95,8 @@ const DEFAULT_FORM: ItemFormState = {
   is_batch: false,
   default_batch_price_mode: 'batch',
   is_serialized: false,
+  warranty_enabled: false,
+  warranty_months: '',
   reorder_level: '0',
   sales_criteria_enabled: false,
   min_sales_qty: '',
@@ -237,6 +243,8 @@ function itemToForm(item: Item): ItemFormState {
     is_batch: item.is_batch,
     default_batch_price_mode: item.default_batch_price_mode || 'batch',
     is_serialized: item.is_serialized,
+    warranty_enabled: Boolean(item.warranty_enabled),
+    warranty_months: item.warranty_months ? String(item.warranty_months) : '',
     reorder_level: String(item.reorder_level ?? 0),
     sales_criteria_enabled: item.sales_criteria_enabled,
     min_sales_qty: item.min_sales_qty ? String(item.min_sales_qty) : '',
@@ -458,6 +466,10 @@ export function ItemFormModal({
         is_batch: form.is_batch,
         default_batch_price_mode: form.is_batch ? form.default_batch_price_mode : 'batch',
         is_serialized: form.is_serialized,
+        warranty_enabled: form.warranty_enabled,
+        warranty_months: form.warranty_enabled && form.warranty_months
+          ? Number(form.warranty_months)
+          : null,
         reorder_level: Number(form.reorder_level || 0),
         sales_criteria_enabled: form.sales_criteria_enabled,
         min_sales_qty: form.sales_criteria_enabled && form.min_sales_qty
@@ -674,7 +686,7 @@ export function ItemFormModal({
               </OperationField>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <ToggleCard
                 active={form.is_batch}
                 icon={Boxes}
@@ -694,7 +706,59 @@ export function ItemFormModal({
                   }))
                 }
               />
+              <ToggleCard
+                active={form.warranty_enabled}
+                icon={ShieldCheck}
+                title="Warranty included"
+                description="Sales of this item carry a warranty and can be claimed later."
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    warranty_enabled: !current.warranty_enabled,
+                    warranty_months: !current.warranty_enabled
+                      ? current.warranty_months || '12'
+                      : '',
+                  }))
+                }
+              />
             </div>
+
+            {form.warranty_enabled && (
+              <OperationField label="Warranty period (months)">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="120"
+                    step="1"
+                    value={form.warranty_months}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        warranty_months: event.target.value,
+                      }))
+                    }
+                    className="w-32 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                  />
+                  {['6', '12', '24'].map((months) => (
+                    <button
+                      key={months}
+                      type="button"
+                      onClick={() =>
+                        setForm((current) => ({ ...current, warranty_months: months }))
+                      }
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                        form.warranty_months === months
+                          ? 'border-slate-950 bg-slate-950 text-white'
+                          : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {months} months
+                    </button>
+                  ))}
+                </div>
+              </OperationField>
+            )}
 
             {form.is_batch && (
               <div className="space-y-4">

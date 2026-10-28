@@ -7,12 +7,15 @@ use Illuminate\Database\Eloquent\Model;
 class THirePurchaseDetail extends Model
 {
     protected $table = 't_hire_purchase_details';
-    protected $fillable = ['invoice_no', 'invoice_date', 'item_code', 'Item_s_code', 'item_description', 'batch_no', 'store_id', 'serial_numbers', 'qty', 'returned_qty', 'unit_price', 'discount_precentage', 'discount', 'discount_type', 'discount_value', 'net_value', 'is_cash_converted', 'BC', 'UID'];
+    protected $fillable = ['invoice_no', 'invoice_date', 'item_code', 'Item_s_code', 'item_description', 'batch_no', 'store_id', 'serial_numbers', 'warranty_enabled', 'warranty_months', 'warranty_expiry_date', 'qty', 'returned_qty', 'unit_price', 'discount_precentage', 'discount', 'discount_type', 'discount_value', 'net_value', 'is_cash_converted', 'BC', 'UID'];
 
     public $timestamps = false;
 
     protected $casts = [
         'serial_numbers' => 'array',
+        'warranty_enabled' => 'boolean',
+        'warranty_months' => 'integer',
+        'warranty_expiry_date' => 'date:Y-m-d',
         'unit_price' => 'decimal:2',
         'discount' => 'decimal:2',
         'discount_value' => 'decimal:2',

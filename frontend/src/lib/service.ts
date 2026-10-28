@@ -107,6 +107,7 @@ export interface ServiceTicket {
   problem_description: string;
   intake_condition?: string | null;
   is_warranty: boolean;
+  warranty_claim?: { id: number; claim_no: string; status: string } | null;
   expected_completion_date?: string | null;
   assigned_technician?: string | null;
   repair_summary?: string | null;

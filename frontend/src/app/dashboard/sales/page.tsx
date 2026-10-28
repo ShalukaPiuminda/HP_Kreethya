@@ -88,6 +88,11 @@ import {
   SummaryRow,
   StickyFormFooter,
 } from '@/components/invoice-form-ui';
+import {
+  WarrantyLineControl,
+  warrantyLineDefaults,
+  warrantyLinePayload,
+} from '@/components/warranty-line-control';
 
 type BatchPricingMode = 'batch' | 'average' | 'last';
 
@@ -101,6 +106,8 @@ interface SaleLineForm {
   discount: string;
   discount_type: DiscountType;
   serial_numbers: string;
+  warranty_enabled: boolean;
+  warranty_months: string;
 }
 
 interface SaleForm {
@@ -145,6 +152,8 @@ function blankLine(): SaleLineForm {
     discount: '0',
     discount_type: 'amount',
     serial_numbers: '',
+    warranty_enabled: false,
+    warranty_months: '',
   };
 }
 
@@ -293,6 +302,7 @@ function selectItemOnLine(
     pricing_mode: pricingMode,
     unit_price: resolveBatchUnitPrice(item, storeId, batchNo, pricingMode),
     serial_numbers: '',
+    ...warrantyLineDefaults(item),
   };
 }
 
@@ -763,6 +773,16 @@ export default function SalesPage() {
     }));
   };
 
+  const updateLineWarranty = (
+    key: number,
+    warranty: { warranty_enabled: boolean; warranty_months: string }
+  ) => {
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((line) => (line.key === key ? { ...line, ...warranty } : line)),
+    }));
+  };
+
   const addLine = () => {
     setForm((current) => ({
       ...current,
@@ -818,6 +838,7 @@ export default function SalesPage() {
             serial_numbers: item?.is_serialized
               ? parseSerialNumbers(line.serial_numbers)
               : [],
+            ...warrantyLinePayload(item, line),
           };
         }),
         cheque: numeric(form.cheque_payment) > 0
@@ -1228,6 +1249,13 @@ export default function SalesPage() {
                             </Badge>
                           )}
                           {item.is_serialized && <Badge icon={Barcode} tone="indigo">Serialized item</Badge>}
+                          {item.warranty_enabled && (
+                            <WarrantyLineControl
+                              enabled={line.warranty_enabled}
+                              months={line.warranty_months}
+                              onChange={(warranty) => updateLineWarranty(line.key, warranty)}
+                            />
+                          )}
                         </div>
                       )}
 

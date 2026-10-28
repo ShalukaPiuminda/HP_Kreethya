@@ -109,6 +109,22 @@ class ReportingController extends BaseController
         return $this->successResponse($this->reportingService->hirePurchase($request->user(), $validated));
     }
 
+    public function warranty(Request $request)
+    {
+        $validated = $request->validate([
+            'view' => ['nullable', 'in:expiring,claims_by_item,register'],
+            'days' => ['nullable', 'integer', 'min:1', 'max:365'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date', 'after_or_equal:from'],
+            'store_id' => ['nullable', 'integer'],
+            'customer_code' => ['nullable', 'string', 'max:50'],
+            'item_code' => ['nullable', 'string', 'max:50'],
+            'search' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        return $this->successResponse($this->reportingService->warranty($request->user(), $validated));
+    }
+
     public function cashFlow(Request $request)
     {
         $validated = $request->validate([

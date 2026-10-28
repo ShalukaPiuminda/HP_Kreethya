@@ -9,6 +9,7 @@ export type BuiltInReportKey =
   | 'grn'
   | 'sales'
   | 'hire-purchase'
+  | 'warranty'
   | 'cash-in-out';
 
 export interface BuiltInReport {
@@ -30,6 +31,7 @@ export const BUILT_IN_REPORTS: BuiltInReport[] = [
   { key: 'grn', name: 'GRN / Purchases', category: 'Inventory', description: 'Goods received from suppliers, summary or detail.' },
   { key: 'sales', name: 'Sales', category: 'Sales & Hire Purchase', description: 'Invoices by customer, item and store, summary or detail.' },
   { key: 'hire-purchase', name: 'Hire Purchase', category: 'Sales & Hire Purchase', description: 'Hire purchase agreements, collections and balances.' },
+  { key: 'warranty', name: 'Warranty', category: 'Sales & Hire Purchase', description: 'Warranties expiring soon, claims by item, and the register of warranty units sold.' },
 ];
 
 export const CATEGORY_ORDER = ['Financial', 'Inventory', 'Sales & Hire Purchase'];

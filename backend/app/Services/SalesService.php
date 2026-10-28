@@ -26,7 +26,8 @@ class SalesService
     public function __construct(
         private readonly StockService $stockService,
         private readonly AccountingService $accountingService,
-        private readonly ChequeEntryService $chequeEntryService
+        private readonly ChequeEntryService $chequeEntryService,
+        private readonly WarrantyService $warrantyService
     ) {}
 
     public function createAdvance(array $data, User $user): TAdvancCusPayment
@@ -218,6 +219,11 @@ class SalesService
                     'net_value' => $netValue,
                     'batch_no' => $batchNo,
                     'serial_numbers' => $line['serial_numbers'] ?? [],
+                    'warranty' => $this->warrantyService->resolveLineWarranty(
+                        $item,
+                        $line,
+                        $data['invoice_date']
+                    ),
                 ];
                 $grossAmount += $lineGross;
             }
@@ -303,6 +309,7 @@ class SalesService
                     'batch_no' => $line['batch_no'],
                     'store_id' => $data['store_id'],
                     'serial_numbers' => $line['serial_numbers'],
+                    ...$line['warranty'],
                     'QTY' => $line['qty'],
                     'Unit_price' => $line['unit_price'],
                     'Discount' => $line['discount'],
@@ -678,38 +685,41 @@ class SalesService
                     'UID' => $user->username,
                 ]);
 
-                $item = $detail->item;
-                $purchasePrice = (float) $item->standard_purchase_price;
-                $salesPrice = (float) $item->standard_sales_price;
-                if ($item->is_batch) {
-                    $batch = ItemBatch::query()
-                        ->where('batch_no', $detail->batch_no)
-                        ->where('item_code', $detail->Item_code)
-                        ->where('store_id', $detail->store_id)
-                        ->where('BC', $user->BC)
-                        ->firstOrFail();
-                    $purchasePrice = (float) $batch->purchase_price;
-                    $salesPrice = (float) $batch->sales_price;
-                }
+                // Warranty refunds pass restock=false: the faulty unit must not return to sellable stock.
+                if ($data['restock'] ?? true) {
+                    $item = $detail->item;
+                    $purchasePrice = (float) $item->standard_purchase_price;
+                    $salesPrice = (float) $item->standard_sales_price;
+                    if ($item->is_batch) {
+                        $batch = ItemBatch::query()
+                            ->where('batch_no', $detail->batch_no)
+                            ->where('item_code', $detail->Item_code)
+                            ->where('store_id', $detail->store_id)
+                            ->where('BC', $user->BC)
+                            ->firstOrFail();
+                        $purchasePrice = (float) $batch->purchase_price;
+                        $salesPrice = (float) $batch->sales_price;
+                    }
 
-                try {
-                    $this->stockService->receiveStock(
-                        $returnNo,
-                        'SALE-RETURN',
-                        $detail->Item_code,
-                        $detail->batch_no,
-                        (int) $detail->store_id,
-                        $line['qty'],
-                        $purchasePrice,
-                        $salesPrice,
-                        $user->BC,
-                        $user->username,
-                        $line['serial_numbers']
-                    );
-                } catch (\InvalidArgumentException|\RuntimeException $exception) {
-                    throw ValidationException::withMessages([
-                        "items.{$line['index']}.invoice_detail_id" => $exception->getMessage(),
-                    ]);
+                    try {
+                        $this->stockService->receiveStock(
+                            $returnNo,
+                            'SALE-RETURN',
+                            $detail->Item_code,
+                            $detail->batch_no,
+                            (int) $detail->store_id,
+                            $line['qty'],
+                            $purchasePrice,
+                            $salesPrice,
+                            $user->BC,
+                            $user->username,
+                            $line['serial_numbers']
+                        );
+                    } catch (\InvalidArgumentException|\RuntimeException $exception) {
+                        throw ValidationException::withMessages([
+                            "items.{$line['index']}.invoice_detail_id" => $exception->getMessage(),
+                        ]);
+                    }
                 }
             }
 

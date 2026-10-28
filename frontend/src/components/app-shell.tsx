@@ -158,6 +158,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Service',
     items: [
       { label: 'Service Tickets', href: '/dashboard/service', icon: Wrench, module: 'service' },
+      { label: 'Warranty Claims', href: '/dashboard/warranty-claims', icon: ShieldCheck, module: 'warranty' },
     ],
   },
   {

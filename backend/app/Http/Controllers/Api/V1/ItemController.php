@@ -76,6 +76,8 @@ class ItemController extends GeneratedCodeCrudController
             'is_batch' => ['sometimes', 'boolean'],
             'default_batch_price_mode' => ['nullable', Rule::in(['batch', 'average', 'last'])],
             'is_serialized' => ['sometimes', 'boolean'],
+            'warranty_enabled' => ['sometimes', 'boolean'],
+            'warranty_months' => ['nullable', 'integer', 'min:1', 'max:120'],
             'reorder_level' => ['sometimes', 'integer', 'min:0'],
             'sales_criteria_enabled' => ['sometimes', 'boolean'],
             'min_sales_qty' => ['nullable', 'integer', 'min:1'],
@@ -296,6 +298,28 @@ class ItemController extends GeneratedCodeCrudController
                     'max_sales_price' => 'Maximum sales price cannot be less than minimum sales price.',
                 ]);
             }
+        }
+
+        $warrantyEnabled = array_key_exists('warranty_enabled', $validated)
+            ? (bool) $validated['warranty_enabled']
+            : (bool) $model?->getAttribute('warranty_enabled');
+
+        if (! $warrantyEnabled) {
+            $validated['warranty_enabled'] = false;
+            $validated['warranty_months'] = null;
+        } else {
+            $validated['warranty_enabled'] = true;
+            $warrantyMonths = array_key_exists('warranty_months', $validated)
+                ? $validated['warranty_months']
+                : $model?->getAttribute('warranty_months');
+
+            if (! $warrantyMonths) {
+                throw ValidationException::withMessages([
+                    'warranty_months' => 'Enter the warranty period in months when warranty is included.',
+                ]);
+            }
+
+            $validated['warranty_months'] = (int) $warrantyMonths;
         }
 
         return parent::prepareValidatedData($validated, $model);

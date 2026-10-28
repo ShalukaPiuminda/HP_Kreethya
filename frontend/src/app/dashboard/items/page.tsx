@@ -11,6 +11,7 @@ import {
   Plus,
   RefreshCcw,
   Search,
+  ShieldCheck,
   Sparkles,
   Trash2,
 } from 'lucide-react';
@@ -150,6 +151,7 @@ export default function ItemsPage() {
       total: pagination.total,
       batch: items.filter((item) => item.is_batch).length,
       serial: items.filter((item) => item.is_serialized).length,
+      warranty: items.filter((item) => item.warranty_enabled).length,
       reorder: items.filter((item) => item.reorder_level > 0).length,
     }),
     [items, pagination.total]
@@ -294,10 +296,11 @@ export default function ItemsPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <OperationMetric label="Total items" value={String(summary.total)} tone="indigo" />
         <OperationMetric label="Batch tracked" value={String(summary.batch)} tone="emerald" />
         <OperationMetric label="Serialized" value={String(summary.serial)} tone="amber" />
+        <OperationMetric label="Warranty" value={String(summary.warranty)} tone="slate" />
         <OperationMetric label="Reorder enabled" value={String(summary.reorder)} tone="rose" />
       </section>
 
@@ -412,7 +415,13 @@ export default function ItemsPage() {
                             Serial
                           </span>
                         ) : null}
-                        {!item.is_batch && !item.is_serialized ? (
+                        {item.warranty_enabled ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            Warranty {item.warranty_months}m
+                          </span>
+                        ) : null}
+                        {!item.is_batch && !item.is_serialized && !item.warranty_enabled ? (
                           <span className="text-slate-400">—</span>
                         ) : null}
                       </div>

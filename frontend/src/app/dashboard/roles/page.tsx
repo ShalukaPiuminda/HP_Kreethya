@@ -224,6 +224,12 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
         coverage: ['Sales invoices', 'Sales returns', 'Customer payments', 'Customer advances'],
       },
       {
+        module: 'warranty',
+        label: 'Warranty Claims',
+        description: 'Warranty lookups and claims for items sold with warranty.',
+        coverage: ['Warranty lookup and claims (read/create)', 'Reject open claims (update)'],
+      },
+      {
         module: 'purchases',
         label: 'Purchases',
         description: 'Procurement flow from PO to supplier settlement.',

@@ -7,13 +7,16 @@ use Illuminate\Database\Eloquent\Model;
 class TInvoiceDeil extends Model
 {
     protected $table = 't_invoice_deils';
-    protected $fillable = ['Invoice_no', 'Invoice_date', 'Item_code', 'Item_s_code', 'Item_description', 'batch_no', 'store_id', 'serial_numbers', 'QTY', 'Unit_price', 'Discount', 'discount_type', 'discount_value', 'Net_value', 'BC', 'UID'];
+    protected $fillable = ['Invoice_no', 'Invoice_date', 'Item_code', 'Item_s_code', 'Item_description', 'batch_no', 'store_id', 'serial_numbers', 'warranty_enabled', 'warranty_months', 'warranty_expiry_date', 'QTY', 'Unit_price', 'Discount', 'discount_type', 'discount_value', 'Net_value', 'BC', 'UID'];
     public $timestamps = false;
 
     protected $casts = [
         'Invoice_date' => 'date:Y-m-d',
         'store_id' => 'integer',
         'serial_numbers' => 'array',
+        'warranty_enabled' => 'boolean',
+        'warranty_months' => 'integer',
+        'warranty_expiry_date' => 'date:Y-m-d',
         'QTY' => 'integer',
         'Unit_price' => 'decimal:2',
         'Discount' => 'decimal:2',

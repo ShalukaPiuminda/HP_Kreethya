@@ -87,6 +87,11 @@ import {
   SummaryHighlight,
   SummaryRow,
 } from '@/components/invoice-form-ui';
+import {
+  WarrantyLineControl,
+  warrantyLineDefaults,
+  warrantyLinePayload,
+} from '@/components/warranty-line-control';
 
 type LineForm = {
   item_code: string;
@@ -96,6 +101,8 @@ type LineForm = {
   discount_type: 'amount' | 'percent';
   batch_no: string;
   serial_numbers: string;
+  warranty_enabled: boolean;
+  warranty_months: string;
 };
 
 type OpeningLineForm = {
@@ -190,6 +197,8 @@ const emptyLine = (): LineForm => ({
   discount_type: 'amount',
   batch_no: '',
   serial_numbers: '',
+  warranty_enabled: false,
+  warranty_months: '',
 });
 
 const emptyOpeningLine = (): OpeningLineForm => ({
@@ -286,7 +295,7 @@ function applyHpScan(lines: LineForm[], item: StockItem, storeId: number): { lin
 
   const blankIndex = lines.findIndex((line) => !line.item_code);
   const base = blankIndex >= 0 ? lines[blankIndex] : emptyLine();
-  const newLine: LineForm = { ...base, item_code: item.item_code, batch_no: batchNo, unit_price: '', serial_numbers: '', qty: '1' };
+  const newLine: LineForm = { ...base, item_code: item.item_code, batch_no: batchNo, unit_price: '', serial_numbers: '', qty: '1', ...warrantyLineDefaults(item) };
 
   return {
     lines: blankIndex >= 0
@@ -804,6 +813,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
           discount_type: line.discount_type,
           batch_no: line.batch_no || null,
           serial_numbers: parseSerialNumbers(line.serial_numbers),
+          ...warrantyLinePayload(options.items.find((candidate) => candidate.item_code === line.item_code), line),
         })),
         cheque: form.down_payment_method === 'cheque' && tenderAmount > 0 ? {
           bank_id: Number(form.cheque_bank_id),
@@ -1007,7 +1017,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
                     </span>
                     <LineField label="Item" required className="col-span-2 md:col-span-4 xl:col-span-1">
                       <IconSlot icon={Package}>
-                        <SearchSelect value={line.item_code} onChange={(value) => updateLine(index, { item_code: value, batch_no: '', unit_price: '', serial_numbers: '' })} options={options.items.filter((candidate) => candidate.stores.some((stock) => stock.store_id === selectedStore && stock.qty_in_hand > 0)).map((candidate) => ({ value: candidate.item_code, label: `${candidate.item_code} · ${candidate.item_description}`, description: `${candidate.stores.find((stock) => stock.store_id === selectedStore)?.qty_in_hand ?? 0} in stock`, keywords: candidate.barcode }))} placeholder={form.store_id ? 'Select item' : 'Select a store first'} searchPlaceholder="Search by code, description or barcode..." className={iconInputClass} required />
+                        <SearchSelect value={line.item_code} onChange={(value) => updateLine(index, { item_code: value, batch_no: '', unit_price: '', serial_numbers: '', ...warrantyLineDefaults(options.items.find((candidate) => candidate.item_code === value)) })} options={options.items.filter((candidate) => candidate.stores.some((stock) => stock.store_id === selectedStore && stock.qty_in_hand > 0)).map((candidate) => ({ value: candidate.item_code, label: `${candidate.item_code} · ${candidate.item_description}`, description: `${candidate.stores.find((stock) => stock.store_id === selectedStore)?.qty_in_hand ?? 0} in stock`, keywords: candidate.barcode }))} placeholder={form.store_id ? 'Select item' : 'Select a store first'} searchPlaceholder="Search by code, description or barcode..." className={iconInputClass} required />
                       </IconSlot>
                     </LineField>
                     <LineField label="Batch" required={Boolean(item?.is_batch)} className="col-span-2 xl:col-span-1">
@@ -1075,6 +1085,13 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
                         </Badge>
                       )}
                       {item.is_serialized && <Badge icon={Barcode} tone="indigo">Serialized item</Badge>}
+                      {item.warranty_enabled && (
+                        <WarrantyLineControl
+                          enabled={line.warranty_enabled}
+                          months={line.warranty_months}
+                          onChange={(warranty) => updateLine(index, warranty)}
+                        />
+                      )}
                     </div>
                   )}
 

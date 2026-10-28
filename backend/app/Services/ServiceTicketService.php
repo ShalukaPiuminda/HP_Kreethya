@@ -13,6 +13,8 @@ use App\Models\TServiceIssue;
 use App\Models\TServiceItemTrack;
 use App\Models\TServiceReturn;
 use App\Models\TServiceSupplierPayment;
+use App\Models\TWarrantyClaim;
+use App\Models\TWarrantyClaimEvent;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -359,6 +361,21 @@ class ServiceTicketService
             $ticket->repair_summary = $data['repair_details'];
             $ticket->status = 'repaired';
             $ticket->save();
+            $claim = TWarrantyClaim::query()
+                ->where('BC', $ticket->BC)
+                ->where('service_ticket_no', $ticket->ticket_no)
+                ->where('status', 'in_repair')
+                ->first();
+            if ($claim) {
+                $claim->update(['status' => 'ready_for_pickup']);
+                TWarrantyClaimEvent::create([
+                    'claim_no' => $claim->claim_no,
+                    'event' => 'repaired',
+                    'description' => "Repair completed on {$ticket->ticket_no} by {$issue->technician_name}. Ready for pickup.",
+                    'BC' => $user->BC,
+                    'UID' => $user->username,
+                ]);
+            }
             $this->track(
                 $ticket,
                 'repaired',
@@ -375,6 +392,16 @@ class ServiceTicketService
         return DB::transaction(function () use ($ticket, $data, $user) {
             $ticket = $this->lockTicket($ticket->id, $user);
             $this->assertStatus($ticket, ['repaired'], 'Only repaired tickets can be invoiced.');
+            $hasActiveClaim = TWarrantyClaim::query()
+                ->where('BC', $ticket->BC)
+                ->where('service_ticket_no', $ticket->ticket_no)
+                ->where('status', '!=', 'rejected')
+                ->exists();
+            if ($hasActiveClaim) {
+                throw ValidationException::withMessages([
+                    'service_charge' => 'Warranty claim repairs are not invoiced to the customer. Hand the item over from the warranty claim.',
+                ]);
+            }
             $supplierCost = (float) TServiceDispatch::query()
                 ->where('ticket_no', $ticket->ticket_no)
                 ->where('BC', $user->BC)
@@ -502,7 +529,7 @@ class ServiceTicketService
             $ticket = $this->lockTicket($ticket->id, $user);
             $this->assertStatus(
                 $ticket,
-                ['received_from_supplier', 'under_repair', 'repaired', 'invoiced', 'customer_paid'],
+                ['received_from_supplier', 'under_repair', 'repaired', 'invoiced', 'customer_paid', 'completed'],
                 'This ticket has no payable supplier repair ready for settlement.'
             );
             $dispatch = TServiceDispatch::query()
@@ -563,6 +590,55 @@ class ServiceTicketService
 
             return $this->freshTicket($ticket);
         });
+    }
+
+    /**
+     * Free warranty repair handed back to the customer: closes the ticket without
+     * any service invoice or customer payment.
+     */
+    public function releaseWarrantyTicket(TServiceReturn $ticket, string $date, ?string $note, User $user): TServiceReturn
+    {
+        $ticket = $this->lockTicket($ticket->id, $user);
+        $this->assertStatus($ticket, ['repaired'], 'Only repaired tickets can be handed over.');
+        if (! $ticket->is_warranty) {
+            throw ValidationException::withMessages([
+                'ticket' => 'Only warranty tickets can be released without a service invoice.',
+            ]);
+        }
+
+        $ticket->status = 'completed';
+        $ticket->completed_date = $date;
+        $ticket->save();
+        $this->track(
+            $ticket,
+            'completed',
+            'Released to customer under warranty (no charge).'.($note ? " {$note}" : ''),
+            $user
+        );
+
+        return $this->freshTicket($ticket);
+    }
+
+    /** Warranty rejected during repair: the ticket continues as a normal paid service job. */
+    public function convertWarrantyToPaid(TServiceReturn $ticket, string $reason, User $user): TServiceReturn
+    {
+        $ticket = $this->lockTicket($ticket->id, $user);
+        if ($ticket->status === 'completed') {
+            throw ValidationException::withMessages([
+                'ticket' => 'This service ticket is already completed.',
+            ]);
+        }
+
+        $ticket->is_warranty = false;
+        $ticket->save();
+        $this->track(
+            $ticket,
+            'warranty_rejected',
+            "Warranty rejected: {$reason}. Continues as a paid service job.",
+            $user
+        );
+
+        return $this->freshTicket($ticket);
     }
 
     private function completeWhenSettled(TServiceReturn $ticket, string $date, User $user): void
@@ -648,6 +724,7 @@ class ServiceTicketService
             'issues',
             'invoices.payments.bankAccount',
             'tracks',
+            'warrantyClaim:id,claim_no,service_ticket_no,status',
         ];
     }
 

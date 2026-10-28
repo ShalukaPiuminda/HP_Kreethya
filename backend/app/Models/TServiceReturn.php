@@ -42,6 +42,11 @@ class TServiceReturn extends Model
         return $this->hasMany(TServiceInvoice::class, 'ticket_no', 'ticket_no');
     }
 
+    public function warrantyClaim()
+    {
+        return $this->hasOne(TWarrantyClaim::class, 'service_ticket_no', 'ticket_no');
+    }
+
     public function tracks()
     {
         return $this->hasMany(TServiceItemTrack::class, 'ticket_no', 'ticket_no')

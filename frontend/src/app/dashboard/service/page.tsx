@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banknote,
   CheckCircle2,
@@ -40,6 +40,10 @@ import type {
   ServiceTicket,
 } from '@/lib/service';
 import { SearchSelect } from '@/components/search-select';
+import { WarrantyClaimsPanel } from '@/components/warranty-claims-panel';
+
+type PageTab = 'tickets' | 'warranty';
+type WarrantyFocus = { claimId: number; action: 'handover' | 'detail'; key: number } | null;
 
 type TicketAction =
   | 'dispatch'
@@ -118,6 +122,10 @@ export default function ServicePage() {
   const canCreate = hasPermission('service', 'can_create');
   const canUpdate = hasPermission('service', 'can_update');
   const canDelete = hasPermission('service', 'can_delete');
+  const canReadWarranty = hasPermission('warranty', 'can_read');
+  const [pageTab, setPageTab] = useState<PageTab>('tickets');
+  const [warrantyFocus, setWarrantyFocus] = useState<WarrantyFocus>(null);
+  const focusCounter = useRef(0);
   const [tickets, setTickets] = useState<ServiceTicket[]>([]);
   const [options, setOptions] = useState<ServiceOptions | null>(null);
   const [summary, setSummary] = useState<ServiceSummary | null>(null);
@@ -189,6 +197,40 @@ export default function ServicePage() {
   }, [search, status, tickets]);
 
   const selectedItem = options?.items.find((item) => item.item_code === ticketForm.item_code);
+
+  // ?tab=warranty&claim=<id>&action=handover keeps the selected tab on refresh and in links.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const timer = window.setTimeout(() => {
+      if (params.get('tab') !== 'warranty') return;
+      setPageTab('warranty');
+      if (params.get('claim')) {
+        setWarrantyFocus({
+          claimId: Number(params.get('claim')),
+          action: params.get('action') === 'handover' ? 'handover' : 'detail',
+          key: ++focusCounter.current,
+        });
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const switchTab = (next: PageTab, focus: WarrantyFocus = null) => {
+    setPageTab(next);
+    setWarrantyFocus(focus);
+    setSelectedTicket(null);
+    const query = new URLSearchParams();
+    if (next === 'warranty') query.set('tab', 'warranty');
+    if (focus) {
+      query.set('claim', String(focus.claimId));
+      query.set('action', focus.action);
+    }
+    window.history.replaceState(null, '', `${window.location.pathname}${query.size ? `?${query}` : ''}`);
+    if (next === 'tickets') void loadData();
+  };
+
+  const openWarrantyClaim = (claimId: number, claimAction: 'handover' | 'detail') =>
+    switchTab('warranty', { claimId, action: claimAction, key: ++focusCounter.current });
 
   if (!canRead) {
     return (
@@ -320,7 +362,7 @@ export default function ServicePage() {
         title="Service Tickets"
         description="Manage customer intake, external supplier repairs, technician work, service billing, settlements, and item handover from one controlled workflow."
         icon={Wrench}
-        actions={
+        actions={pageTab === 'warranty' ? undefined : (
           <>
             <button
               type="button"
@@ -343,9 +385,40 @@ export default function ServicePage() {
               </button>
             )}
           </>
-        }
+        )}
       />
 
+      {canReadWarranty && (
+        <div className="flex gap-1 border-b border-slate-200">
+          {([
+            ['tickets', 'Service tickets'],
+            ['warranty', 'Warranty claims'],
+          ] as Array<[PageTab, string]>).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => switchTab(key)}
+              className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition ${
+                pageTab === key
+                  ? 'border-indigo-600 text-indigo-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {pageTab === 'warranty' && canReadWarranty ? (
+        <WarrantyClaimsPanel
+          key={warrantyFocus?.key ?? 'warranty'}
+          compact
+          focusClaimId={warrantyFocus?.claimId ?? null}
+          focusAction={warrantyFocus?.action ?? null}
+        />
+      ) : (
+      <>
       {notice && <OperationNotice type={notice.type}>{notice.message}</OperationNotice>}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -438,8 +511,17 @@ export default function ServicePage() {
                       <div className="mt-1 text-xs text-slate-400">{displayDate(ticket.return_date)}</div>
                       {ticket.is_warranty && (
                         <span className="mt-2 inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">
-                          Warranty
+                          {isClaimRepair(ticket) ? 'Free warranty' : 'Warranty'}
                         </span>
+                      )}
+                      {ticket.warranty_claim && (
+                        <button
+                          type="button"
+                          onClick={() => openWarrantyClaim(ticket.warranty_claim!.id, 'detail')}
+                          className="mt-1 block font-mono text-[10px] text-violet-600 hover:underline"
+                        >
+                          Claim {ticket.warranty_claim.claim_no}
+                        </button>
                       )}
                     </td>
                     <td className="px-5 py-4">
@@ -485,7 +567,7 @@ export default function ServicePage() {
                           </div>
                         </div>
                       ) : (
-                        <span className="text-xs text-slate-400">Not billed</span>
+                        <span className="text-xs text-slate-400">{isClaimRepair(ticket) ? 'No charge (warranty)' : 'Not billed'}</span>
                       )}
                     </td>
                     <td className="px-5 py-4">
@@ -599,6 +681,11 @@ export default function ServicePage() {
           options={options}
           onClose={() => setSelectedTicket(null)}
           onAction={openAction}
+          onWarrantyHandover={
+            canReadWarranty && isClaimRepair(selectedTicket)
+              ? () => openWarrantyClaim(selectedTicket.warranty_claim!.id, 'handover')
+              : undefined
+          }
         />
       )}
 
@@ -615,6 +702,8 @@ export default function ServicePage() {
           onClose={() => !saving && setAction(null)}
         />
       )}
+      </>
+      )}
     </div>
   );
 }
@@ -625,12 +714,15 @@ function TicketWorkspace({
   options,
   onClose,
   onAction,
+  onWarrantyHandover,
 }: {
   ticket: ServiceTicket;
   canUpdate: boolean;
   options: ServiceOptions | null;
   onClose: () => void;
   onAction: (action: TicketAction) => void;
+  /** Warranty tickets are released from the warranty claim, never invoiced. */
+  onWarrantyHandover?: () => void;
 }) {
   const invoice = latest(ticket.invoices);
   const dispatch = latest(ticket.dispatches);
@@ -655,11 +747,25 @@ function TicketWorkspace({
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Current Workflow Stage</div>
             <div className="mt-2 flex items-center gap-3">
               <StatusPill status={ticket.status} />
-              <span className="text-sm text-slate-300">{nextStepLabel(ticket.status)}</span>
+              <span className="text-sm text-slate-300">
+                {isClaimRepair(ticket) && ticket.status === 'repaired'
+                  ? 'Free warranty repair done. Hand the item over from the warranty claim.'
+                  : nextStepLabel(ticket.status)}
+              </span>
             </div>
           </div>
-          {canUpdate && actions.length > 0 && (
+          {(canUpdate && actions.length > 0) || (onWarrantyHandover && ticket.status === 'repaired') ? (
             <div className="flex flex-wrap gap-2">
+              {onWarrantyHandover && ticket.status === 'repaired' && (
+                <button
+                  type="button"
+                  onClick={onWarrantyHandover}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-3.5 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-600"
+                >
+                  <PackageCheck className="h-4 w-4" />
+                  Hand over (warranty)
+                </button>
+              )}
               {actions.map((item) => (
                 <button
                   key={item.action}
@@ -673,13 +779,17 @@ function TicketWorkspace({
                 </button>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <DetailCard label="Customer" value={ticket.customer_name} help={ticket.customer_nic} />
           <DetailCard label="Item Serial" value={ticket.item_serial_no || 'Not recorded'} help={ticket.item_code} />
-          <DetailCard label="Customer Due" value={formatCurrency(customerOutstanding)} help={invoice?.invoice_no ?? 'Not invoiced'} />
+          <DetailCard
+            label="Customer Due"
+            value={isClaimRepair(ticket) ? 'No charge' : formatCurrency(customerOutstanding)}
+            help={isClaimRepair(ticket) ? `Free warranty service · ${ticket.warranty_claim?.claim_no}` : invoice?.invoice_no ?? 'Not invoiced'}
+          />
           <DetailCard label="Supplier Due" value={formatCurrency(supplierOutstanding)} help={dispatch?.dispatch_no ?? 'No external repair'} />
         </div>
 
@@ -973,13 +1083,13 @@ function availableActions(
   if (ticket.status === 'under_repair') {
     actions.push({ action: 'complete-repair', label: 'Complete Repair', icon: CheckCircle2 });
   }
-  if (ticket.status === 'repaired') {
+  if (ticket.status === 'repaired' && !isClaimRepair(ticket)) {
     actions.push({ action: 'invoice', label: 'Create Invoice', icon: ReceiptText });
   }
   if (customerOutstanding > 0 && ['invoiced', 'customer_paid'].includes(ticket.status)) {
     actions.push({ action: 'customer-payment', label: 'Customer Payment', icon: HandCoins });
   }
-  if (supplierOutstanding > 0 && ticket.status !== 'completed') {
+  if (supplierOutstanding > 0 && (ticket.status !== 'completed' || isClaimRepair(ticket))) {
     actions.push({ action: 'supplier-payment', label: 'Supplier Payment', icon: Banknote });
   }
   return actions;
@@ -1060,6 +1170,11 @@ function formatStatus(value: string) {
     .split(' ')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+/** Repairs for an active warranty claim are free: no invoice, released from the claim. */
+function isClaimRepair(ticket: ServiceTicket) {
+  return Boolean(ticket.warranty_claim) && ticket.warranty_claim?.status !== 'rejected';
 }
 
 function nextStepLabel(status: ServiceStatus) {
