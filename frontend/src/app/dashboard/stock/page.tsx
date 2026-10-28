@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -11,6 +12,7 @@ import {
   Store,
 } from '@/lib/inventory';
 import { SearchSelect } from '@/components/search-select';
+import { ItemFormModal, type Item, type ItemFormState } from '@/components/item-form-modal';
 import { usePopupKeyboard } from '@/lib/use-popup-keyboard';
 
 const emptyReceipt = {
@@ -62,6 +64,8 @@ export default function StockPage() {
   const [storeForm, setStoreForm] = useState({ name: '', location: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [newItemValues, setNewItemValues] = useState<Partial<ItemFormState> | null>(null);
+  const canCreateItem = hasPermission('items', 'can_create');
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -130,6 +134,48 @@ export default function StockPage() {
       sales_price: item && !item.is_batch ? item.standard_sales_price.toString() : '',
       serial_numbers: '',
     }));
+  };
+
+  /** Opens the item form from the receipt's item picker, pre-filled with what was searched. */
+  const openNewItem = (query: string) => {
+    // A scanned or typed number is a barcode; anything else starts the description.
+    const looksLikeBarcode = /^\d{6,}$/.test(query);
+    setNewItemValues(looksLikeBarcode ? { barcode: query } : { item_description: query });
+  };
+
+  /** Adds the new item (no stock yet) to the list and selects it on the receipt. */
+  const handleItemCreated = (saved: Item) => {
+    const purchasePrice = Number(saved.standard_purchase_price) || 0;
+    const salesPrice = Number(saved.standard_sales_price) || 0;
+    const stockItem: StockItem = {
+      id: saved.id,
+      item_code: saved.item_code,
+      item_description: saved.item_description,
+      barcode: saved.barcode,
+      is_batch: saved.is_batch,
+      default_batch_price_mode: saved.default_batch_price_mode,
+      is_serialized: saved.is_serialized,
+      reorder_level: saved.reorder_level,
+      standard_purchase_price: purchasePrice,
+      standard_sales_price: salesPrice,
+      total_qty: 0,
+      stock_value: 0,
+      is_below_reorder: false,
+      stores: [],
+      batches: [],
+      available_serials: [],
+    };
+
+    setInventory((current) => [...current, stockItem]);
+    setReceipt((current) => ({
+      ...current,
+      item_code: saved.item_code,
+      batch_no: '',
+      purchase_price: saved.is_batch ? '' : purchasePrice.toString(),
+      sales_price: saved.is_batch ? '' : salesPrice.toString(),
+      serial_numbers: '',
+    }));
+    setNewItemValues(null);
   };
 
   const submitReceipt = async (event: React.FormEvent) => {
@@ -351,6 +397,10 @@ export default function StockPage() {
                 options={inventory.map((item) => ({ value: item.item_code, label: `${item.item_code} - ${item.item_description}`, keywords: item.barcode }))}
                 placeholder="Select item"
                 searchPlaceholder="Search by code, description or barcode..."
+                createAction={canCreateItem ? {
+                  label: 'Add new item',
+                  onCreate: openNewItem,
+                } : undefined}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm"
                 required
               />
@@ -481,6 +531,14 @@ export default function StockPage() {
         </Modal>
       )}
 
+      {newItemValues && (
+        <ItemFormModal
+          initialValues={newItemValues}
+          onClose={() => setNewItemValues(null)}
+          onSaved={handleItemCreated}
+        />
+      )}
+
       {serialEdit && (
         <Modal title="Edit Opening Stock Serials" onClose={() => setSerialEdit(null)}>
           <form onSubmit={submitSerialEdit} className="space-y-4">
@@ -546,6 +604,9 @@ function StockRow({
   onEditSerials: (movement: StockMovement) => void;
   canReceive: boolean;
 }) {
+  const { hasPermission } = useAuth();
+  const canViewPriceHistory = hasPermission('price-revisions', 'can_read');
+
   return (
     <>
       <tr className={item.is_below_reorder ? 'bg-amber-50/40' : 'hover:bg-slate-50/70'}>
@@ -618,6 +679,7 @@ function StockRow({
                             <th className="pb-2 text-right">Qty</th>
                             <th className="pb-2 text-right">Purchase</th>
                             <th className="pb-2 text-right">Sale</th>
+                            {canViewPriceHistory && <th className="pb-2" />}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -628,6 +690,16 @@ function StockRow({
                               <td className="py-2 text-right font-bold">{batch.qty_in_hand}</td>
                               <td className="py-2 text-right">{formatCurrency(batch.purchase_price)}</td>
                               <td className="py-2 text-right">{formatCurrency(batch.sales_price)}</td>
+                              {canViewPriceHistory && (
+                                <td className="py-2 pl-3 text-right">
+                                  <Link
+                                    href={`/dashboard/price-revisions?batch_id=${batch.id}&item_code=${encodeURIComponent(item.item_code)}`}
+                                    className="font-semibold text-indigo-600 hover:underline"
+                                  >
+                                    Price history
+                                  </Link>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>

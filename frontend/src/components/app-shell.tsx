@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   BadgeDollarSign,
   BadgeCheck,
+  BadgePercent,
   Banknote,
   Boxes,
   BriefcaseBusiness,
@@ -146,7 +147,10 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Stock Levels', href: '/dashboard/stock', icon: Boxes, module: 'items' },
       { label: 'Stock Transfers', href: '/dashboard/stock-transfers', icon: ArrowLeftRight, module: 'items' },
+
+      { label: 'Price Revisions', href: '/dashboard/price-revisions', icon: BadgePercent, module: 'price-revisions' },
       { label: 'Stock Adjustments', href: '/dashboard/stock-adjustments', icon: ClipboardPen, module: 'stock-adjustments' },
+      
       { label: 'Reorder Alerts', href: '/dashboard/reorder-alerts', icon: FileClock, module: 'items' },
     ],
   },
