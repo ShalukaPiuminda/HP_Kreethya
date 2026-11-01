@@ -134,20 +134,120 @@ class HPController extends BaseController
 
     public function installments(Request $request)
     {
-        $installments = TInstalment::query()
-            ->where('BC', $request->user()->BC)
-            ->with('sum:id,invoice_no,agreement_no,customer_name,status')
-            ->when($request->query('invoice_no'), fn ($query, string $invoiceNo) => $query->where('invoice_no', $invoiceNo))
-            ->when($request->query('status'), fn ($query, string $status) => $query->where('status', $status))
-            ->when($request->query('due_from'), fn ($query, string $date) => $query->whereDate('instalment_date', '>=', $date))
-            ->when($request->query('due_to'), fn ($query, string $date) => $query->whereDate('instalment_date', '<=', $date))
-            ->when($request->boolean('overdue'), fn ($query) => $query
-                ->whereIn('status', ['pending', 'partial'])
-                ->whereDate('instalment_date', '<', today()))
-            ->orderBy('instalment_date')
-            ->paginate(min(max((int) $request->integer('per_page', 50), 1), 100));
+        $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'invoice_no' => ['nullable', 'string', 'max:50'],
+            'status' => ['nullable', Rule::in(['unpaid', 'pending', 'partial', 'paid', 'converted', 'cancelled'])],
+            'view' => ['nullable', Rule::in(['today', 'week', 'month', 'overdue', 'upcoming'])],
+            'aging' => ['nullable', Rule::in(['1-30', '31-60', '61-90', '90+'])],
+            'due_from' => ['nullable', 'date'],
+            'due_to' => ['nullable', 'date'],
+            'schema_type' => ['nullable', 'string', 'max:50'],
+            'agreement_status' => ['nullable', Rule::in(['active', 'completed', 'converted', 'returned'])],
+            'min_balance' => ['nullable', 'numeric', 'min:0'],
+            'overdue' => ['nullable', 'boolean'],
+            'sort' => ['nullable', Rule::in(['instalment_date', 'balance_amount', 'agreement_no', 'customer_name', 'instalment_no'])],
+            'direction' => ['nullable', Rule::in(['asc', 'desc'])],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
 
-        return $this->paginatedResponse($installments, 'Installments retrieved.');
+        $today = today();
+        $unpaid = ['pending', 'partial'];
+        $query = TInstalment::query()
+            ->where('BC', $request->user()->BC)
+            ->when($filters['search'] ?? null, function ($query, string $search) {
+                $like = '%'.trim($search).'%';
+                $query->where(fn ($inner) => $inner
+                    ->where('agreement_no', 'like', $like)
+                    ->orWhere('invoice_no', 'like', $like)
+                    ->orWhere('customer_name', 'like', $like)
+                    ->orWhereHas('sum', fn ($sum) => $sum
+                        ->where('customer_nic', 'like', $like)
+                        ->orWhere('customer_phone', 'like', $like)
+                        ->orWhere('customer_name', 'like', $like)
+                        ->orWhere('reference_no', 'like', $like)));
+            })
+            ->when($filters['invoice_no'] ?? null, fn ($query, string $invoiceNo) => $query->where('invoice_no', $invoiceNo))
+            ->when($filters['status'] ?? null, fn ($query, string $status) => $status === 'unpaid'
+                ? $query->whereIn('status', $unpaid)
+                : $query->where('status', $status))
+            ->when($filters['view'] ?? null, function ($query, string $view) use ($today, $unpaid) {
+                match ($view) {
+                    'today' => $query->whereDate('instalment_date', $today),
+                    'week' => $query->whereBetween('instalment_date', [$today->copy()->startOfWeek()->toDateString(), $today->copy()->endOfWeek()->toDateString()]),
+                    'month' => $query->whereBetween('instalment_date', [$today->copy()->startOfMonth()->toDateString(), $today->copy()->endOfMonth()->toDateString()]),
+                    'overdue' => $query->whereIn('status', $unpaid)->whereDate('instalment_date', '<', $today),
+                    'upcoming' => $query->whereDate('instalment_date', '>', $today),
+                };
+            })
+            ->when($filters['aging'] ?? null, function ($query, string $aging) use ($today, $unpaid) {
+                // Days overdue = today - due date, so each bucket is a due-date window.
+                [$minDays, $maxDays] = match ($aging) {
+                    '1-30' => [1, 30],
+                    '31-60' => [31, 60],
+                    '61-90' => [61, 90],
+                    '90+' => [91, null],
+                };
+                $query->whereIn('status', $unpaid)
+                    ->whereDate('instalment_date', '<=', $today->copy()->subDays($minDays))
+                    ->when($maxDays, fn ($inner) => $inner->whereDate('instalment_date', '>=', $today->copy()->subDays($maxDays)));
+            })
+            ->when($filters['due_from'] ?? null, fn ($query, string $date) => $query->whereDate('instalment_date', '>=', $date))
+            ->when($filters['due_to'] ?? null, fn ($query, string $date) => $query->whereDate('instalment_date', '<=', $date))
+            ->when($filters['schema_type'] ?? null, fn ($query, string $schema) => $query->whereHas('sum', fn ($sum) => $sum->where('schema_type', $schema)))
+            ->when($filters['agreement_status'] ?? null, fn ($query, string $status) => $query->whereHas('sum', fn ($sum) => $sum->where('status', $status)))
+            ->when(isset($filters['min_balance']), fn ($query) => $query->where('balance_amount', '>=', (float) $filters['min_balance']))
+            ->when($request->boolean('overdue'), fn ($query) => $query
+                ->whereIn('status', $unpaid)
+                ->whereDate('instalment_date', '<', $today));
+
+        $overdueQuery = (clone $query)->whereIn('status', $unpaid)->whereDate('instalment_date', '<', $today);
+        $summary = [
+            'count' => (clone $query)->count(),
+            'balance_total' => round((float) (clone $query)->sum('balance_amount'), 2),
+            'overdue_count' => (clone $overdueQuery)->count(),
+            'overdue_amount' => round((float) (clone $overdueQuery)->sum('balance_amount'), 2),
+            'overdue_agreements' => (clone $overdueQuery)->distinct()->count('invoice_no'),
+        ];
+
+        $sort = $filters['sort'] ?? 'instalment_date';
+        $direction = $filters['direction'] ?? 'asc';
+        $installments = $query
+            ->with([
+                'sum:id,invoice_no,agreement_no,customer_name,customer_nic,customer_phone,schema_type,status',
+                'sum.schema:id,SchemaType,PanaltyCharage,GracePeriodDays',
+            ])
+            ->orderBy($sort, $direction)
+            ->orderBy('id')
+            ->paginate((int) ($filters['per_page'] ?? 50));
+
+        $installments->getCollection()->each(function (TInstalment $instalment) use ($today, $unpaid) {
+            $isOverdue = in_array($instalment->status, $unpaid, true) && $instalment->instalment_date->lt($today);
+            $schema = $instalment->sum?->schema;
+            $instalment->setAttribute('days_overdue', $isOverdue ? (int) $instalment->instalment_date->diffInDays($today) : 0);
+            $instalment->setAttribute('estimated_penalty', $isOverdue && $schema
+                ? $this->hpService->calculatePenalty(
+                    (float) $instalment->balance_amount,
+                    $instalment->instalment_date->format('Y-m-d'),
+                    (float) $schema->PanaltyCharage,
+                    (int) $schema->GracePeriodDays,
+                    $today->format('Y-m-d')
+                )['penalty_amount']
+                : 0.0);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Installments retrieved.',
+            'data' => $installments->items(),
+            'meta' => [
+                'current_page' => $installments->currentPage(),
+                'last_page' => $installments->lastPage(),
+                'per_page' => $installments->perPage(),
+                'total' => $installments->total(),
+            ],
+            'summary' => $summary,
+        ]);
     }
 
     public function convert(Request $request, int $id)

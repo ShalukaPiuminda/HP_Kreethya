@@ -72,7 +72,21 @@ export interface HpInstallment {
   status: string;
   is_waived: boolean;
   payments: HpPayment[];
-  sum?: Pick<HpAgreement, 'id' | 'invoice_no' | 'agreement_no' | 'customer_name' | 'status'>;
+  days_overdue?: number;
+  estimated_penalty?: number;
+  sum?: Pick<HpAgreement, 'id' | 'invoice_no' | 'agreement_no' | 'customer_name' | 'status'> & {
+    customer_nic?: string | null;
+    customer_phone?: string | null;
+    schema_type?: string;
+  };
+}
+
+export interface HpInstallmentSummary {
+  count: number;
+  balance_total: number;
+  overdue_count: number;
+  overdue_amount: number;
+  overdue_agreements: number;
 }
 
 export interface HpDetail {

@@ -12,6 +12,7 @@ use App\Models\Role;
 use App\Models\Store;
 use App\Models\User;
 use App\Services\StockService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -179,6 +180,55 @@ class HirePurchaseWorkflowTest extends TestCase
             (float) \DB::table('t_account_trans')->sum('dr_amount'),
             (float) \DB::table('t_account_trans')->sum('cr_amount')
         );
+    }
+
+    public function test_installment_list_filters_by_search_view_aging_and_returns_summary(): void
+    {
+        $this->postJson('/api/v1/hp', [
+            'invoice_date' => '2026-01-01',
+            'customer_code' => $this->customer->Code,
+            'guarantor_1_code' => $this->guarantor->Code,
+            'schema_type' => 'HP-4',
+            'store_id' => $this->store->id,
+            'down_payment' => 20000,
+            'down_payment_method' => 'cash',
+            'instalment_due_date' => 1,
+            'items' => [['item_code' => $this->item->item_code, 'qty' => 1]],
+        ])->assertCreated();
+
+        // Due dates: 2026-02-01, 03-01, 04-01, 05-01. Three are overdue on 2026-04-10.
+        Carbon::setTestNow('2026-04-10 10:00:00');
+
+        $response = $this->getJson('/api/v1/hp/installments?status=unpaid&search=901111111V')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 4)
+            ->assertJsonPath('summary.count', 4)
+            ->assertJsonPath('summary.overdue_count', 3)
+            ->assertJsonPath('summary.overdue_agreements', 1)
+            ->assertJsonPath('data.0.days_overdue', 68)
+            ->assertJsonPath('data.0.sum.customer_phone', '0771111111');
+        $this->assertGreaterThan(0, $response->json('data.0.estimated_penalty'));
+        $this->assertEquals(0, $response->json('data.3.estimated_penalty'));
+
+        $this->getJson('/api/v1/hp/installments?search=nobody-matches')
+            ->assertOk()->assertJsonPath('meta.total', 0);
+        $this->getJson('/api/v1/hp/installments?view=overdue')
+            ->assertOk()->assertJsonPath('meta.total', 3);
+        $this->getJson('/api/v1/hp/installments?view=upcoming')
+            ->assertOk()->assertJsonPath('meta.total', 1);
+        $this->getJson('/api/v1/hp/installments?view=month')
+            ->assertOk()->assertJsonPath('data.0.instalment_date', '2026-04-01');
+        $this->getJson('/api/v1/hp/installments?aging=61-90')
+            ->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.instalment_date', '2026-02-01');
+        $this->getJson('/api/v1/hp/installments?aging=31-60')
+            ->assertOk()->assertJsonPath('data.0.instalment_date', '2026-03-01');
+        $this->getJson('/api/v1/hp/installments?aging=90%2B')
+            ->assertOk()->assertJsonPath('meta.total', 0);
+        $this->getJson('/api/v1/hp/installments?sort=instalment_date&direction=desc')
+            ->assertOk()->assertJsonPath('data.0.instalment_date', '2026-05-01');
+        $this->getJson('/api/v1/hp/installments?aging=bogus')->assertStatus(422);
+
+        Carbon::setTestNow();
     }
 
     public function test_opening_hire_purchase_imports_existing_installments_without_stock_dispatch(): void
