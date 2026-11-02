@@ -1,0 +1,183 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "item-wise-purchase-report",
+    "name": "Item Wise Purchase Report",
+    "category": "Purchase",
+    "description": null,
+    "sql_query": "SELECT\n    i.item_code,\n    i.item_description,\n    c.name                                                   AS category_name,\n    b.name                                                   AS brand_name,\n    COUNT(DISTINCT d.Invoice_no)                             AS no_of_grns,\n    SUM(d.QTY)                                               AS purchased_qty,\n    SUM(d.free_qty)                                          AS free_qty,\n    SUM(d.QTY + d.free_qty)                                  AS total_qty,\n    SUM(d.QTY * d.Unit_price)                                AS gross_amount,\n    SUM(d.QTY * d.Unit_price) - SUM(d.Net_value)             AS discount,\n    SUM(d.Net_value)                                         AS net_amount,\n    ROUND(SUM(d.Net_value) / NULLIF(SUM(d.QTY + d.free_qty), 0), 2) AS avg_cost,\n    MIN(d.Unit_price)                                        AS min_price,\n    MAX(d.Unit_price)                                        AS max_price,\n    MAX(h.Invoice_date)                                      AS last_purchase_date\nFROM t_purchases_details d\nJOIN t_purchases_sums h ON h.Invoice_no = d.Invoice_no\nJOIN items i            ON i.item_code  = d.Item_code\nLEFT JOIN categories c  ON c.id = i.category_id\nLEFT JOIN m_brands b    ON b.id = i.brand_id\nWHERE h.BC = :bc\n  AND h.Invoice_date BETWEEN :from AND :to\n  AND (:store_id    IS NULL OR COALESCE(d.store_id, h.store_id) = :store_id)\n  AND (:supplier    IS NULL OR h.supplier_code = :supplier)\n  AND (:category    IS NULL OR i.category_id = :category OR c.parent_id = :category)\n  AND (:brand_id    IS NULL OR i.brand_id = :brand_id)\n  AND (:search      IS NULL OR i.item_code LIKE CONCAT('%', :search, '%')\n                            OR i.item_description LIKE CONCAT('%', :search, '%'))\nGROUP BY i.item_code, i.item_description, c.name, b.name\nORDER BY net_amount DESC, i.item_code;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "store_id",
+            "label": "Store",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "stores",
+            "options": []
+        },
+        {
+            "name": "supplier",
+            "label": "Supplier",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "suppliers",
+            "options": []
+        },
+        {
+            "name": "category",
+            "label": "Category",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "categories",
+            "options": []
+        },
+        {
+            "name": "brand_id",
+            "label": "Brand",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "brands",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "item_code",
+            "label": "Item Code",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "item_description",
+            "label": "Item Description",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "brand_name",
+            "label": "Brand Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "last_purchase_date",
+            "label": "Last Purchase Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "no_of_grns",
+            "label": "No Of Grns",
+            "align": "right",
+            "format": "number",
+            "total": false
+        },
+        {
+            "key": "purchased_qty",
+            "label": "Purchased Qty",
+            "align": "right",
+            "format": "number",
+            "total": true
+        },
+        {
+            "key": "free_qty",
+            "label": "Free Qty",
+            "align": "right",
+            "format": "number",
+            "total": true
+        },
+        {
+            "key": "total_qty",
+            "label": "Total Qty",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "gross_amount",
+            "label": "Gross Amount",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "discount",
+            "label": "Discount",
+            "align": "right",
+            "format": "number",
+            "total": true
+        },
+        {
+            "key": "net_amount",
+            "label": "Net Amount",
+            "align": "right",
+            "format": "money",
+            "total": true
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 0
+}

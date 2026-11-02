@@ -1,0 +1,174 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "payment-voucher-report",
+    "name": "Payment Voucher Report",
+    "category": "Financial",
+    "description": null,
+    "sql_query": "SELECT\n    v.invoice_no                                              AS voucher_no,\n    v.date                                                    AS voucher_date,\n    v.drcode                                                  AS account_code,\n    COALESCE(dr.description, v.drcode)                        AS expense_account,\n    v.description,\n    CONCAT(UPPER(LEFT(v.payment_method, 1)), SUBSTRING(v.payment_method, 2)) AS payment_method,\n    COALESCE(cr.description, v.crcode)                        AS paid_from,\n    COALESCE(CONCAT(bd.bank_name, ' - ', bd.account_no), '')  AS bank_account,\n    CONCAT(UPPER(LEFT(v.status, 1)), SUBSTRING(v.status, 2))  AS status,\n    v.UID                                                     AS entered_by,\n    v.amount\nFROM t_payment_vouchers v\nLEFT JOIN m_chartof_accounts dr ON dr.code = v.drcode\nLEFT JOIN m_chartof_accounts cr ON cr.code = v.crcode\nLEFT JOIN bank_details bd       ON bd.id   = v.bank_detail_id\nWHERE v.BC = :bc\n  AND v.date BETWEEN :from AND :to\n  AND ((:status IS NULL AND v.status <> 'cancelled') OR v.status = :status)\n  AND (:payment_method IS NULL OR v.payment_method = :payment_method)\n  AND (:account        IS NULL OR v.drcode = :account)\n  AND (:search         IS NULL OR v.invoice_no  LIKE CONCAT('%', :search, '%')\n                               OR v.description LIKE CONCAT('%', :search, '%'))\nORDER BY v.date, v.invoice_no;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "status",
+            "label": "Status",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "payment_method",
+            "label": "Payment Method",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "account",
+            "label": "Account",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "cash_accounts",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "voucher_no",
+            "label": "Voucher No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "voucher_date",
+            "label": "Voucher Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "account_code",
+            "label": "Account Code",
+            "align": "right",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "expense_account",
+            "label": "Expense Account",
+            "align": "right",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "description",
+            "label": "Description",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "payment_method",
+            "label": "Payment Method",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "paid_from",
+            "label": "Paid From",
+            "align": "right",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "bank_account",
+            "label": "Bank Account",
+            "align": "right",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "status",
+            "label": "Status",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "entered_by",
+            "label": "Entered By",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "money",
+            "total": true
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 3
+}

@@ -1,0 +1,85 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "item-details",
+    "name": "Item Details",
+    "category": "Stock Reports",
+    "description": null,
+    "sql_query": "SELECT\n    i.item_code,\n    i.item_description,\n    i.standard_purchase_price AS purchase_price,\n    i.standard_sales_price    AS sales_price\nFROM items i\nLEFT JOIN categories c ON c.id = i.category_id\nWHERE i.BC = :bc\n  AND (:category IS NULL OR i.category_id = :category OR c.parent_id = :category)\n  AND (:search IS NULL OR i.item_code LIKE CONCAT('%', :search, '%')\n                       OR i.item_description LIKE CONCAT('%', :search, '%'))\nORDER BY i.item_code",
+    "parameters": [
+        {
+            "name": "category",
+            "label": "Category",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "categories",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "item_code",
+            "label": "Item Code",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "item_description",
+            "label": "Item Description",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "purchase_price",
+            "label": "Purchase Price",
+            "align": "right",
+            "format": "money"
+        },
+        {
+            "key": "sales_price",
+            "label": "Sales Price",
+            "align": "right",
+            "format": "money"
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "rows",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#DBDBDB",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#FCFCFC"
+        }
+    },
+    "is_published": true,
+    "sort_order": 0
+}

@@ -1,0 +1,96 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "stock-zero-report",
+    "name": "Stock Zero Report",
+    "category": "Stock Reports",
+    "description": null,
+    "sql_query": "SELECT\n    i.item_code,\n    i.item_description,\n    c.name                                  AS category_name,\n    b.name                                  AS brand_name,\n    COALESCE(stk.qty_in_hand, 0)           AS current_qty,\n    i.reorder_level,\n    i.standard_purchase_price               AS purchase_price,\n    i.standard_sales_price                  AS sales_price,\n    stk.last_movement_date,\n    CASE\n        WHEN stk.last_movement_date IS NULL \n            THEN 'Never Stocked'\n        WHEN i.reorder_level > 0 AND COALESCE(stk.qty_in_hand, 0) <= i.reorder_level \n            THEN 'Reorder Required'\n        ELSE 'Out of Stock'\n    END AS stock_status\nFROM items i\nLEFT JOIN categories c ON c.id = i.category_id\nLEFT JOIN m_brands b ON b.id = i.brand_id\nLEFT JOIN (\n    SELECT\n        m.item_code,\n        SUM(m.qun_in - m.qun_out) AS qty_in_hand,\n        MAX(m.dDate)              AS last_movement_date\n    FROM t_item_movements m\n    WHERE m.BC = :bc\n      AND (:store_id IS NULL OR m.store_id = :store_id)\n      AND (:to IS NULL OR m.dDate <= :to)\n    GROUP BY m.item_code\n) stk ON stk.item_code = i.item_code\nWHERE i.BC = :bc\n  AND COALESCE(stk.qty_in_hand, 0) <= 0\n  AND (:from IS NULL OR stk.last_movement_date >= :from)\n  AND (:category IS NULL OR i.category_id = :category OR c.parent_id = :category)\n  AND (:brand_id IS NULL OR i.brand_id = :brand_id)\n  AND (:search IS NULL OR i.item_code LIKE CONCAT('%', :search, '%')\n                       OR i.item_description LIKE CONCAT('%', :search, '%'))\nORDER BY \n    i.reorder_level DESC, \n    stk.last_movement_date DESC, \n    i.item_code ASC;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "store_id",
+            "label": "Store",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "stores",
+            "options": []
+        },
+        {
+            "name": "category",
+            "label": "Category",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "categories",
+            "options": []
+        },
+        {
+            "name": "brand_id",
+            "label": "Brand",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "brands",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 4
+}

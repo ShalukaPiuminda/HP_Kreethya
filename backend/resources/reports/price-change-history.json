@@ -1,0 +1,242 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "price-change-history",
+    "name": "Price Change History",
+    "category": "Stock Reports",
+    "description": "Every batch and standard price change with old and new prices, who changed it and why.",
+    "sql_query": "SELECT\n    pr.revision_no,\n    pr.created_at                              AS changed_at,\n    pr.item_code,\n    i.item_description,\n    COALESCE(s.name, '-')                      AS store_name,\n    COALESCE(l.batch_no, 'Standard price')     AS batch_no,\n    l.old_purchase_price,\n    l.new_purchase_price,\n    l.old_sales_price,\n    l.new_sales_price,\n    l.new_sales_price - l.old_sales_price      AS sales_change,\n    CASE\n        WHEN l.old_sales_price > 0\n            THEN ROUND((l.new_sales_price - l.old_sales_price) * 100 / l.old_sales_price, 2)\n        ELSE NULL\n    END                                        AS sales_change_pct,\n    CASE pr.source\n        WHEN 'manual'   THEN 'Manual'\n        WHEN 'reversal' THEN 'Reversal'\n        WHEN 'OPS'      THEN 'Opening stock'\n        ELSE pr.source\n    END                                        AS source,\n    pr.source_no,\n    CASE pr.status WHEN 'reversed' THEN 'Reversed' ELSE 'Applied' END AS status,\n    pr.UID                                     AS changed_by,\n    pr.reason\nFROM price_revisions pr\nJOIN price_revision_lines l ON l.price_revision_id = pr.id\nLEFT JOIN items i ON i.item_code = pr.item_code AND i.BC = pr.BC\nLEFT JOIN stores s ON s.id = l.store_id\nWHERE pr.BC = :bc\n  AND (:from IS NULL OR DATE(pr.created_at) >= :from)\n  AND (:to IS NULL OR DATE(pr.created_at) <= :to)\n  AND (:item_code IS NULL OR pr.item_code = :item_code)\n  AND (:store_id IS NULL OR l.store_id = :store_id)\n  AND (:source IS NULL OR pr.source = :source)\n  AND (:changed_by IS NULL OR pr.UID LIKE CONCAT('%', :changed_by, '%'))\n  AND (:search IS NULL OR pr.revision_no LIKE CONCAT('%', :search, '%')\n                       OR pr.item_code LIKE CONCAT('%', :search, '%')\n                       OR i.item_description LIKE CONCAT('%', :search, '%')\n                       OR pr.reason LIKE CONCAT('%', :search, '%'))\nORDER BY pr.created_at DESC, pr.id DESC, l.id ASC;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "item_code",
+            "label": "Item",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "items",
+            "options": []
+        },
+        {
+            "name": "store_id",
+            "label": "Store",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "stores",
+            "options": []
+        },
+        {
+            "name": "source",
+            "label": "Source",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "list",
+            "options": [
+                {
+                    "value": "manual",
+                    "label": "Manual"
+                },
+                {
+                    "value": "GRN",
+                    "label": "GRN"
+                },
+                {
+                    "value": "OPS",
+                    "label": "Opening stock"
+                },
+                {
+                    "value": "reversal",
+                    "label": "Reversal"
+                }
+            ]
+        },
+        {
+            "name": "changed_by",
+            "label": "Changed By",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "revision_no",
+            "label": "Revision No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "changed_at",
+            "label": "Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "item_code",
+            "label": "Item Code",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "item_description",
+            "label": "Item Description",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "store_name",
+            "label": "Store",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "batch_no",
+            "label": "Batch",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "old_purchase_price",
+            "label": "Old Purchase",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "new_purchase_price",
+            "label": "New Purchase",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "old_sales_price",
+            "label": "Old Sales",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "new_sales_price",
+            "label": "New Sales",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "sales_change",
+            "label": "Sales Change",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "sales_change_pct",
+            "label": "Change %",
+            "align": "right",
+            "format": "number",
+            "total": false
+        },
+        {
+            "key": "source",
+            "label": "Source",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "source_no",
+            "label": "Source No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "status",
+            "label": "Status",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "changed_by",
+            "label": "Changed By",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "reason",
+            "label": "Reason",
+            "align": "left",
+            "format": "text",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "landscape",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 5
+}

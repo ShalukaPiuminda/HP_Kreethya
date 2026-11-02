@@ -1,0 +1,142 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "stock-valuation-report",
+    "name": "Stock Valuation Report",
+    "category": "Stock Reports",
+    "description": null,
+    "sql_query": "SELECT\n    i.item_code,\n    i.item_description,\n    c.name                                                              AS category_name,\n    b.name                                                              AS brand_name,\n    COALESCE(stk.qty_in_hand, 0)                                       AS qty_in_hand,\n    i.standard_purchase_price                                           AS unit_cost,\n    ROUND(COALESCE(stk.qty_in_hand, 0) * i.standard_purchase_price, 2)  AS total_cost_value,\n    i.standard_sales_price                                              AS unit_sales_price,\n    ROUND(COALESCE(stk.qty_in_hand, 0) * i.standard_sales_price, 2)     AS total_sales_value,\n    ROUND(\n        (COALESCE(stk.qty_in_hand, 0) * i.standard_sales_price) - \n        (COALESCE(stk.qty_in_hand, 0) * i.standard_purchase_price), \n        2\n    )                                                                   AS potential_profit,\n    ROUND(\n        CASE \n            WHEN i.standard_sales_price > 0 \n            THEN ((i.standard_sales_price - i.standard_purchase_price) / i.standard_sales_price) * 100 \n            ELSE 0 \n        END, \n        2\n    )                                                                   AS margin_pct\nFROM items i\nLEFT JOIN categories c ON c.id = i.category_id\nLEFT JOIN m_brands b ON b.id = i.brand_id\nLEFT JOIN (\n    SELECT\n        m.item_code,\n        SUM(m.qun_in - m.qun_out) AS qty_in_hand\n    FROM t_item_movements m\n    WHERE m.BC = :bc\n      AND (:store_id IS NULL OR m.store_id = :store_id)\n      AND (:to IS NULL OR m.dDate <= :to)\n      AND (:from IS NULL OR :from <= :to)\n    GROUP BY m.item_code\n) stk ON stk.item_code = i.item_code\nWHERE i.BC = :bc\n  AND (:category IS NULL OR i.category_id = :category OR c.parent_id = :category)\n  AND (:brand_id IS NULL OR i.brand_id = :brand_id)\n  AND (:search IS NULL OR i.item_code LIKE CONCAT('%', :search, '%')\n                       OR i.item_description LIKE CONCAT('%', :search, '%'))\n  AND (\n      :only_in_stock IS NULL\n      OR :only_in_stock = ''\n      OR :only_in_stock = 'NO'\n      OR COALESCE(stk.qty_in_hand, 0) > 0\n  )\nORDER BY total_cost_value DESC, i.item_code;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "store_id",
+            "label": "Store",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "stores",
+            "options": []
+        },
+        {
+            "name": "category",
+            "label": "Category",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "categories",
+            "options": []
+        },
+        {
+            "name": "brand_id",
+            "label": "Brand",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "brands",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "only_in_stock",
+            "label": "Only In Stock",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "item_code",
+            "label": "Item Code",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "item_description",
+            "label": "Item Description",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "brand_name",
+            "label": "Brand Name",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "qty_in_hand",
+            "label": "Qty In Hand",
+            "align": "right",
+            "format": "number"
+        },
+        {
+            "key": "unit_cost",
+            "label": "Unit Cost",
+            "align": "right",
+            "format": "money"
+        },
+        {
+            "key": "total_cost_value",
+            "label": "Total Cost Value",
+            "align": "right",
+            "format": "money"
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 2
+}

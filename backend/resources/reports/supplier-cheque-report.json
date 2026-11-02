@@ -1,0 +1,222 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "supplier-cheque-report",
+    "name": "Supplier Cheque Report",
+    "category": "Supplier",
+    "description": null,
+    "sql_query": "SELECT\n    DATE(q.created_at)                                        AS issued_date,\n    q.cheques_no                                              AS cheque_no,\n    q.bank,\n    q.branch_code                                             AS bank_branch,\n    q.acc_no                                                  AS account_no,\n    q.release_date,\n    CASE q.trans_type\n        WHEN 'PURCHASE'         THEN 'Payment at Purchase'\n        WHEN 'SUPPLIER_PAYMENT' THEN 'Supplier Payment'\n        ELSE REPLACE(q.trans_type, '_', ' ')\n    END                                                       AS paid_for,\n    q.trans_no                                                AS reference_no,\n    s.Code                                                    AS supplier_code,\n    s.name                                                    AS supplier_name,\n    s.phone                                                   AS supplier_phone,\n    q.amount,\n    CONCAT(UPPER(LEFT(q.status, 1)), SUBSTRING(q.status, 2))  AS status,\n    q.realized_date,\n    q.return_reason,\n    CASE\n        WHEN q.status = 'pending' AND q.release_date < CURDATE() THEN DATEDIFF(CURDATE(), q.release_date)\n        ELSE NULL\n    END                                                       AS days_past_release\nFROM t_sup_cheques q\nLEFT JOIN t_purchases_sums h    ON q.trans_type = 'PURCHASE'         AND h.Invoice_no = q.trans_no\nLEFT JOIN t_supplier_payments p ON q.trans_type = 'SUPPLIER_PAYMENT' AND p.Payment_no = q.trans_no\nLEFT JOIN suppliers s           ON s.Code = COALESCE(h.supplier_code, p.Supplier_Code)\nWHERE q.BC = :bc\n  AND (\n      (COALESCE(:date_by, 'release') = 'release' AND q.release_date BETWEEN :from AND :to)\n   OR (:date_by = 'issued'                       AND DATE(q.created_at) BETWEEN :from AND :to)\n   OR (:date_by = 'realized'                     AND q.realized_date BETWEEN :from AND :to)\n  )\n  AND (:status   IS NULL OR q.status = :status)\n  AND (:supplier IS NULL OR s.Code   = :supplier)\n  AND (:search   IS NULL OR q.cheques_no LIKE CONCAT('%', :search, '%')\n                         OR q.trans_no   LIKE CONCAT('%', :search, '%'))\nORDER BY q.release_date, q.cheques_no;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "date_by",
+            "label": "Date By",
+            "type": "date",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "status",
+            "label": "Status",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "list",
+            "options": [
+                {
+                    "value": "pending",
+                    "label": "Pending"
+                },
+                {
+                    "value": "passed",
+                    "label": "Passed"
+                },
+                {
+                    "value": "returned",
+                    "label": "Returned"
+                }
+            ]
+        },
+        {
+            "name": "supplier",
+            "label": "Supplier",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "suppliers",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "issued_date",
+            "label": "Issued Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "cheque_no",
+            "label": "Cheque No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "bank",
+            "label": "Bank",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "bank_branch",
+            "label": "Bank Branch",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "account_no",
+            "label": "Account No",
+            "align": "right",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "release_date",
+            "label": "Release Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "paid_for",
+            "label": "Paid For",
+            "align": "right",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "reference_no",
+            "label": "Reference No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "supplier_code",
+            "label": "Supplier Code",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "supplier_name",
+            "label": "Supplier Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "supplier_phone",
+            "label": "Supplier Phone",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "status",
+            "label": "Status",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "realized_date",
+            "label": "Realized Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "return_reason",
+            "label": "Return Reason",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "days_past_release",
+            "label": "Days Past Release",
+            "align": "left",
+            "format": "text",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": false,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 2
+}

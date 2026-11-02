@@ -1,0 +1,181 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "item-wise-sales-report",
+    "name": "Item Wise Sales Report",
+    "category": "Sales & Hire Purchase",
+    "description": null,
+    "sql_query": "SELECT\n    i.item_code,\n    i.item_description,\n    c.name                                                        AS category_name,\n    b.name                                                        AS brand_name,\n    COALESCE(s.invoice_count, 0)                                  AS invoice_count,\n    COALESCE(s.sold_qty, 0)                                       AS sold_qty,\n    COALESCE(s.gross_value, 0)                                    AS gross_value,\n    COALESCE(s.discount, 0)                                       AS discount,\n    COALESCE(s.net_sales, 0)                                      AS net_sales,\n    COALESCE(r.return_qty, 0)                                     AS return_qty,\n    COALESCE(r.return_value, 0)                                   AS return_value,\n    COALESCE(s.sold_qty, 0)  - COALESCE(r.return_qty, 0)          AS net_qty,\n    COALESCE(s.net_sales, 0) - COALESCE(r.return_value, 0)        AS net_amount,\n    CASE\n        WHEN COALESCE(s.sold_qty, 0) > 0\n            THEN ROUND(s.net_sales / s.sold_qty, 2)\n        ELSE 0\n    END                                                           AS avg_selling_price\nFROM items i\nLEFT JOIN categories c ON c.id = i.category_id\nLEFT JOIN m_brands   b ON b.id = i.brand_id\nLEFT JOIN (\n    SELECT\n        d.Item_code                                   AS item_code,\n        COUNT(DISTINCT d.Invoice_no)                  AS invoice_count,\n        SUM(d.QTY)                                    AS sold_qty,\n        SUM(d.QTY * d.Unit_price)                     AS gross_value,\n        SUM(d.QTY * d.Unit_price) - SUM(d.Net_value)  AS discount,\n        SUM(d.Net_value)                              AS net_sales\n    FROM t_invoice_deils d\n    JOIN t_invoice_sums h ON h.Invoice_no = d.Invoice_no\n    WHERE h.BC = :bc\n      AND h.Invoice_date BETWEEN :from AND :to\n      AND (:store_id    IS NULL OR d.store_id      = :store_id)\n      AND (:salesman_id IS NULL OR h.salesman_id   = :salesman_id)\n      AND (:customer    IS NULL OR h.customer_code = :customer)\n    GROUP BY d.Item_code\n) s ON s.item_code = i.item_code\nLEFT JOIN (\n    SELECT\n        rd.item_code,\n        SUM(rd.qty)        AS return_qty,\n        SUM(rd.net_value)  AS return_value\n    FROM t_sales_return_details rd\n    JOIN t_sales_return_sums rs ON rs.return_no  = rd.return_no\n    JOIN t_invoice_sums      h  ON h.Invoice_no  = rs.invoice_no\n    WHERE rs.BC = :bc\n      AND rs.return_date BETWEEN :from AND :to\n      AND (:store_id    IS NULL OR rd.store_id     = :store_id)\n      AND (:salesman_id IS NULL OR h.salesman_id   = :salesman_id)\n      AND (:customer    IS NULL OR h.customer_code = :customer)\n    GROUP BY rd.item_code\n) r ON r.item_code = i.item_code\nWHERE i.BC = :bc\n  AND (s.item_code IS NOT NULL OR r.item_code IS NOT NULL)\n  AND (:category IS NULL OR i.category_id = :category OR c.parent_id = :category)\n  AND (:brand_id IS NULL OR i.brand_id = :brand_id)\n  AND (:search   IS NULL OR i.item_code LIKE CONCAT('%', :search, '%')\n                         OR i.item_description LIKE CONCAT('%', :search, '%'))\nORDER BY net_amount DESC, i.item_code;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "store_id",
+            "label": "Store",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "stores",
+            "options": []
+        },
+        {
+            "name": "salesman_id",
+            "label": "Salesman",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "salesmen",
+            "options": []
+        },
+        {
+            "name": "customer",
+            "label": "Customer",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "customers",
+            "options": []
+        },
+        {
+            "name": "category",
+            "label": "Category",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "categories",
+            "options": []
+        },
+        {
+            "name": "brand_id",
+            "label": "Brand",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "brands",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "item_code",
+            "label": "Item Code",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "item_description",
+            "label": "Item Description",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "invoice_count",
+            "label": "Invoice Count",
+            "align": "right",
+            "format": "number"
+        },
+        {
+            "key": "sold_qty",
+            "label": "Sold Qty",
+            "align": "right",
+            "format": "number"
+        },
+        {
+            "key": "gross_value",
+            "label": "Gross Value",
+            "align": "right",
+            "format": "money"
+        },
+        {
+            "key": "discount",
+            "label": "Discount",
+            "align": "right",
+            "format": "number"
+        },
+        {
+            "key": "net_sales",
+            "label": "Net Sales",
+            "align": "left",
+            "format": "text"
+        },
+        {
+            "key": "return_qty",
+            "label": "Return Qty",
+            "align": "right",
+            "format": "number"
+        },
+        {
+            "key": "return_value",
+            "label": "Return Value",
+            "align": "right",
+            "format": "money"
+        },
+        {
+            "key": "net_qty",
+            "label": "Net Qty",
+            "align": "right",
+            "format": "number"
+        },
+        {
+            "key": "net_amount",
+            "label": "Net Amount",
+            "align": "right",
+            "format": "money"
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 2
+}

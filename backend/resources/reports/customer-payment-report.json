@@ -1,0 +1,191 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "customer-payment-report",
+    "name": "Customer Payment Report",
+    "category": "Customer",
+    "description": null,
+    "sql_query": "SELECT receipt_date, receipt_no, receipt_type, customer_code, customer_name, reference,\n       cash, card, cheque, bank_transfer, cash + card + cheque + bank_transfer AS total\nFROM (\n    -- Paid at the time of a sales invoice\n    SELECT s.Invoice_date AS receipt_date, s.Invoice_no AS receipt_no, 'Sales Payment' AS receipt_type,\n           s.customer_code, COALESCE(c.name, s.Customer_Name) AS customer_name, s.Invoice_no AS reference,\n           s.Cash_Pay AS cash, s.card_payment AS card, s.Cheque AS cheque, s.bank_transfer\n    FROM t_invoice_sums s\n    LEFT JOIN customers c ON c.Code = s.customer_code\n    WHERE s.BC = :bc AND s.Invoice_date BETWEEN :from AND :to\n      AND s.Cash_Pay + s.card_payment + s.Cheque + s.bank_transfer > 0\n\n    -- Payments against invoices\n    UNION ALL\n    SELECT p.Payment_date, p.Payment_no, 'Customer Payment',\n           c.Code, COALESCE(c.name, p.Customer_Name),\n           (SELECT GROUP_CONCAT(a.sales_invoice_no SEPARATOR ', ') FROM t_customer_invoice_payments a WHERE a.payment_no = p.Payment_no),\n           p.cash_payment, p.card_payment, p.cheque_payment, p.bank_transfer\n    FROM t_customer_payments p\n    LEFT JOIN customers c ON c.NIC = p.Customer_NIC AND c.BC = p.BC\n    WHERE p.BC = :bc AND p.Payment_date BETWEEN :from AND :to\n\n    -- Advance payments\n    UNION ALL\n    SELECT v.payment_date, v.payment_no, 'Advance Payment',\n           c.Code, COALESCE(c.name, v.customer_name), v.payment_note,\n           v.cash_payment, v.card_payment, v.cheque_payment, v.bank_transfer\n    FROM t_advanc_cus_payments v\n    LEFT JOIN customers c ON c.NIC = v.customer_nic AND c.BC = v.BC\n    WHERE v.BC = :bc AND v.payment_date BETWEEN :from AND :to\n\n    -- HP down payments (the part not covered by an advance); method taken from the ledger account\n    UNION ALL\n    SELECT h.invoice_date, CONCAT(h.invoice_no, '-DP'), 'HP Down Payment',\n           h.customer_code, COALESCE(c.name, h.customer_name), CONCAT('Agreement ', h.agreement_no),\n           IF(g.AccCode = '1001', g.amount, 0), 0,\n           IF(g.AccCode = '1102', g.amount, 0),\n           IF(g.AccCode NOT IN ('1001', '1102'), g.amount, 0)\n    FROM t_hire_purchase_sums h\n    JOIN (\n        SELECT trance_no, AccCode, dr_amount AS amount\n        FROM t_account_trans\n        WHERE BC = :bc AND trance_type = 'HP_DOWN_PAYMENT' AND dr_amount > 0\n    ) g ON g.trance_no = CONCAT(h.invoice_no, '-DP')\n    LEFT JOIN customers c ON c.Code = h.customer_code\n    WHERE h.BC = :bc AND h.invoice_date BETWEEN :from AND :to\n\n    -- HP installment collections (one row per collection)\n    UNION ALL\n    SELECT MIN(p.payment_date), COALESCE(p.collection_no, p.payment_no), 'HP Installment',\n           h.customer_code, COALESCE(c.name, h.customer_name), CONCAT('Agreement ', h.agreement_no),\n           SUM(IF(p.payment_method = 'cash', p.total_amount, 0)),\n           SUM(IF(p.payment_method = 'card', p.total_amount, 0)),\n           SUM(IF(p.payment_method = 'cheque', p.total_amount, 0)),\n           SUM(IF(p.payment_method = 'bank_transfer', p.total_amount, 0))\n    FROM t_hp_installment_payments p\n    JOIN t_hire_purchase_sums h ON h.invoice_no = p.invoice_no\n    LEFT JOIN customers c ON c.Code = h.customer_code\n    WHERE p.BC = :bc AND p.status = 'posted' AND p.payment_date BETWEEN :from AND :to\n    GROUP BY COALESCE(p.collection_no, p.payment_no), h.customer_code, c.name, h.customer_name, h.agreement_no\n\n    -- HP converted to a cash sale (settlement)\n    UNION ALL\n    SELECT t.conversion_date, t.conversion_no, 'HP Cash Conversion',\n           h.customer_code, COALESCE(c.name, t.customer_name), CONCAT('Agreement ', t.agreement_no),\n           t.cash_payment, t.card_payment, t.cheque_payment, t.bank_transfer\n    FROM t_hire_purchase_to_sales t\n    JOIN t_hire_purchase_sums h ON h.invoice_no = t.invoice_no\n    LEFT JOIN customers c ON c.Code = h.customer_code\n    WHERE t.BC = :bc AND t.conversion_date BETWEEN :from AND :to\n) receipts\nWHERE (:customer     IS NULL OR customer_code = :customer)\n  AND (:receipt_type IS NULL OR receipt_type = :receipt_type)\n  AND (:payment_method IS NULL\n       OR (:payment_method = 'cash'   AND cash > 0)\n       OR (:payment_method = 'card'   AND card > 0)\n       OR (:payment_method = 'cheque' AND cheque > 0)\n       OR (:payment_method = 'bank'   AND bank_transfer > 0))\nORDER BY receipt_date, receipt_no;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "receipt_type",
+            "label": "Receipt Type",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "customer",
+            "label": "Customer",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "customers",
+            "options": []
+        },
+        {
+            "name": "payment_method",
+            "label": "Payment Method",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "list",
+            "options": [
+                {
+                    "value": "Cash",
+                    "label": "cash"
+                },
+                {
+                    "value": "Card",
+                    "label": "card"
+                },
+                {
+                    "value": "Bank",
+                    "label": "bank"
+                },
+                {
+                    "value": "Cheque",
+                    "label": "cheque"
+                }
+            ]
+        }
+    ],
+    "columns": [
+        {
+            "key": "receipt_date",
+            "label": "Receipt Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "receipt_no",
+            "label": "Receipt No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "receipt_type",
+            "label": "Receipt Type",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "customer_code",
+            "label": "Customer Code",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "customer_name",
+            "label": "Customer Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "reference",
+            "label": "Reference",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "cash",
+            "label": "Cash",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "card",
+            "label": "Card",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "cheque",
+            "label": "Cheque",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "bank_transfer",
+            "label": "Bank Transfer",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "total",
+            "label": "Total",
+            "align": "right",
+            "format": "money",
+            "total": true
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 5
+}

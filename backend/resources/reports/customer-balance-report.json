@@ -1,0 +1,147 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "customer-balance-report",
+    "name": "Customer Balance Report",
+    "category": "Customer",
+    "description": null,
+    "sql_query": "SELECT\n    c.Code                                         AS customer_code,\n    c.name                                         AS customer_name,\n    c.NIC                                          AS nic,\n    c.phone,\n    COALESCE(s.invoices, 0)                        AS open_invoices,\n    COALESCE(s.sales_due, 0)                       AS sales_due,\n    COALESCE(h.agreements, 0)                      AS open_agreements,\n    COALESCE(h.hp_due, 0)                          AS hp_due,\n    c.advance_balance                              AS advance_balance,\n    COALESCE(s.sales_due, 0) + COALESCE(h.hp_due, 0) - c.advance_balance AS net_balance,\n    LEAST(COALESCE(s.oldest_invoice, '9999-12-31'), COALESCE(h.oldest_agreement, '9999-12-31')) AS oldest_due_date\nFROM customers c\nLEFT JOIN (\n    SELECT customer_code,\n           COUNT(*) AS invoices,\n           SUM(Net_Amount - paid_amount - returned_amount) AS sales_due,\n           MIN(Invoice_date) AS oldest_invoice\n    FROM t_invoice_sums\n    WHERE BC = :bc\n      AND Net_Amount - paid_amount - returned_amount > 0.009\n    GROUP BY customer_code\n) s ON s.customer_code = c.Code\nLEFT JOIN (\n    SELECT customer_code,\n           COUNT(*) AS agreements,\n           SUM(outstanding_amount) AS hp_due,\n           MIN(invoice_date) AS oldest_agreement\n    FROM t_hire_purchase_sums\n    WHERE BC = :bc\n      AND status IN ('active', 'completed')\n      AND outstanding_amount > 0.009\n    GROUP BY customer_code\n) h ON h.customer_code = c.Code\nWHERE c.BC = :bc\n  AND (:customer IS NULL OR c.Code = :customer)\n  AND (:search   IS NULL OR c.Code  LIKE CONCAT('%', :search, '%')\n                         OR c.name  LIKE CONCAT('%', :search, '%')\n                         OR c.NIC   LIKE CONCAT('%', :search, '%')\n                         OR c.phone LIKE CONCAT('%', :search, '%'))\n  AND (\n      :show = 'all'\n      OR (COALESCE(:show, 'due') = 'due' AND COALESCE(s.sales_due, 0) + COALESCE(h.hp_due, 0) - c.advance_balance > 0.009)\n      OR (:show = 'advance' AND c.advance_balance > 0.009)\n  )\nORDER BY net_balance DESC, c.name;",
+    "parameters": [
+        {
+            "name": "customer",
+            "label": "Customer",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "customers",
+            "options": []
+        },
+        {
+            "name": "search",
+            "label": "Search",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "show",
+            "label": "Show",
+            "type": "text",
+            "required": false,
+            "default": null,
+            "source": null,
+            "options": []
+        }
+    ],
+    "columns": [
+        {
+            "key": "customer_code",
+            "label": "Customer Code",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "customer_name",
+            "label": "Customer Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "nic",
+            "label": "Nic",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "phone",
+            "label": "Phone",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "open_invoices",
+            "label": "Open Invoices",
+            "align": "left",
+            "format": "number",
+            "total": true
+        },
+        {
+            "key": "open_agreements",
+            "label": "Open Agreements",
+            "align": "left",
+            "format": "number",
+            "total": true
+        },
+        {
+            "key": "sales_due",
+            "label": "Sales Due",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "hp_due",
+            "label": "Hp Due",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "advance_balance",
+            "label": "Advance Balance",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "net_balance",
+            "label": "Net Balance",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "oldest_due_date",
+            "label": "Oldest Due Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 6
+}

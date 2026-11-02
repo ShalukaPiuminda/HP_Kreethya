@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #f8fafc;
+}
+
+body {
+  margin: 0;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  outline-offset: 3px;
+}
+
+.hidden-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hidden-scrollbar::-webkit-scrollbar {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+.sidebar-scrollbar {
+  scrollbar-gutter: stable;
+  scrollbar-color: rgba(148, 163, 184, 0.55) rgba(241, 245, 249, 0.9);
+  scrollbar-width: thin;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.9);
+  border-radius: 999px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.55);
+  border: 2px solid rgba(241, 245, 249, 0.9);
+  border-radius: 999px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.5);
+}
+
+.content-scrollbar {
+  scrollbar-color: rgba(100, 116, 139, 0.24) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.content-scrollbar::-webkit-scrollbar {
+  height: 5px;
+  width: 5px;
+}
+
+.content-scrollbar::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+.content-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.content-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.24);
+  border: 1.5px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.content-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(79, 70, 229, 0.42);
+  border: 1.5px solid transparent;
+  background-clip: padding-box;
+}
+
+/*
+ * Printing: a zero page margin leaves the browser no room for its own header and
+ * footer (date, title, URL, page number). The page spacing is restored by padding
+ * the content, repeated on every printed page. Print pages can set --print-margin.
+ */
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+
+  .print-sheet {
+    padding: var(--print-margin, 12mm) !important;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+}

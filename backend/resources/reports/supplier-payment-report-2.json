@@ -1,0 +1,191 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "supplier-payment-report-2",
+    "name": "Supplier Payment Report",
+    "category": "Supplier",
+    "description": null,
+    "sql_query": "SELECT payment_date, payment_no, payment_type, supplier_code, supplier_name, reference,\n       cash, cheque, bank_transfer, cash + cheque + bank_transfer AS total, note\nFROM (\n    -- Paid when the goods were received (GRN)\n    SELECT h.Invoice_date AS payment_date, h.Invoice_no AS payment_no, 'Payment at Purchase' AS payment_type,\n           h.supplier_code, COALESCE(s.name, h.Customer_Name) AS supplier_name,\n           CONCAT_WS(' / ', h.Invoice_no, NULLIF(h.Ref_no, '')) AS reference,\n           h.cash_payment AS cash, h.cheque_payment AS cheque, 0 AS bank_transfer, NULL AS note\n    FROM t_purchases_sums h\n    LEFT JOIN suppliers s ON s.Code = h.supplier_code\n    WHERE h.BC = :bc AND h.Invoice_date BETWEEN :from AND :to\n      AND h.cash_payment + h.cheque_payment > 0\n\n    -- Supplier payments (against GRNs)\n    UNION ALL\n    SELECT p.Payment_date, p.Payment_no, 'Supplier Payment',\n           p.Supplier_Code, COALESCE(NULLIF(p.Supplier_Name, ''), s.name),\n           (SELECT GROUP_CONCAT(a.purchase_invoice_no ORDER BY a.purchase_invoice_no SEPARATOR ', ')\n              FROM t_supplier_invoice_payments a WHERE a.payment_no = p.Payment_no),\n           p.cash_payment, p.cheque_payment, p.bank_transfer + p.card_payment, p.Payment_note\n    FROM t_supplier_payments p\n    LEFT JOIN suppliers s ON s.Code = p.Supplier_Code\n    WHERE p.BC = :bc AND p.Payment_date BETWEEN :from AND :to\n\n    -- Service (repair) supplier payments\n    UNION ALL\n    SELECT sp.payment_date, sp.payment_no, 'Service Supplier Payment',\n           d.supplier_code, s.name,\n           CONCAT('Dispatch ', sp.dispatch_no, ' / Ticket ', d.ticket_no),\n           IF(sp.payment_method = 'cash', sp.amount, 0),\n           IF(sp.payment_method = 'cheque', sp.amount, 0),\n           IF(sp.payment_method = 'bank_transfer', sp.amount, 0),\n           sp.payment_note\n    FROM t_service_supplier_payments sp\n    JOIN t_service_dispatches d ON d.dispatch_no = sp.dispatch_no\n    LEFT JOIN suppliers s ON s.Code = d.supplier_code\n    WHERE sp.BC = :bc AND sp.payment_date BETWEEN :from AND :to\n) payments\nWHERE (:supplier     IS NULL OR supplier_code = :supplier)\n  AND (:payment_type IS NULL OR payment_type = :payment_type)\n  AND (:payment_method IS NULL\n       OR (:payment_method = 'cash'   AND cash > 0)\n       OR (:payment_method = 'cheque' AND cheque > 0)\n       OR (:payment_method = 'bank'   AND bank_transfer > 0))\nORDER BY payment_date, payment_no;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "supplier",
+            "label": "Supplier",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "suppliers",
+            "options": []
+        },
+        {
+            "name": "payment_type",
+            "label": "Payment Type",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "list",
+            "options": [
+                {
+                    "value": "Payment at Purchase",
+                    "label": "Payment at Purchase"
+                },
+                {
+                    "value": "Supplier Payment",
+                    "label": "Supplier Payment"
+                },
+                {
+                    "value": "Service Supplier Payment",
+                    "label": "Service Supplier Payment"
+                }
+            ]
+        },
+        {
+            "name": "payment_method",
+            "label": "Payment Method",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "list",
+            "options": [
+                {
+                    "value": "cash",
+                    "label": "Cash"
+                },
+                {
+                    "value": "cheque",
+                    "label": "Cheque"
+                },
+                {
+                    "value": "bank",
+                    "label": "Bank Transfer"
+                }
+            ]
+        }
+    ],
+    "columns": [
+        {
+            "key": "payment_date",
+            "label": "Payment Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "payment_no",
+            "label": "Payment No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "payment_type",
+            "label": "Payment Type",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "supplier_code",
+            "label": "Supplier Code",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "supplier_name",
+            "label": "Supplier Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "reference",
+            "label": "Reference",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "cash",
+            "label": "Cash",
+            "align": "left",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "cheque",
+            "label": "Cheque",
+            "align": "left",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "bank_transfer",
+            "label": "Bank Transfer",
+            "align": "left",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "total",
+            "label": "Total",
+            "align": "right",
+            "format": "money",
+            "total": false
+        },
+        {
+            "key": "note",
+            "label": "Note",
+            "align": "left",
+            "format": "text",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 1
+}

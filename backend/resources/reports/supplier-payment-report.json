@@ -1,0 +1,180 @@
+{
+    "format": "erp-custom-report",
+    "version": 1,
+    "slug": "supplier-payment-report",
+    "name": "Supplier Payment Report",
+    "category": "Purchase",
+    "description": null,
+    "sql_query": "SELECT\n    p.Payment_no                                           AS payment_no,\n    p.Payment_date                                         AS payment_date,\n    p.Supplier_Code                                        AS supplier_code,\n    COALESCE(NULLIF(p.Supplier_Name, ''), s.name)          AS supplier_name,\n    COALESCE(a.invoices, '')                               AS paid_invoices,\n    p.cash_payment,\n    p.card_payment,\n    p.cheque_payment,\n    p.bank_transfer,\n    p.Payment_Amount                                       AS payment_amount,\n    COALESCE(CONCAT(bd.bank_name, ' - ', bd.account_no), '') AS bank_account,\n    p.Payment_note                                         AS note\nFROM t_supplier_payments p\nLEFT JOIN suppliers s     ON s.Code = p.Supplier_Code AND s.BC = p.BC\nLEFT JOIN bank_details bd ON bd.id  = p.bank_detail_id\nLEFT JOIN (\n    SELECT payment_no, GROUP_CONCAT(purchase_invoice_no ORDER BY purchase_invoice_no SEPARATOR ', ') AS invoices\n    FROM t_supplier_invoice_payments\n    WHERE BC = :bc\n    GROUP BY payment_no\n) a ON a.payment_no = p.Payment_no\nWHERE p.BC = :bc\n  AND p.Payment_date BETWEEN :from AND :to\n  AND (:supplier IS NULL OR p.Supplier_Code = :supplier)\n  AND (:payment_method IS NULL\n       OR (:payment_method = 'cash'   AND p.cash_payment   > 0)\n       OR (:payment_method = 'card'   AND p.card_payment   > 0)\n       OR (:payment_method = 'cheque' AND p.cheque_payment > 0)\n       OR (:payment_method = 'bank'   AND p.bank_transfer  > 0))\nORDER BY p.Payment_date, p.Payment_no;",
+    "parameters": [
+        {
+            "name": "from",
+            "label": "From",
+            "type": "date",
+            "required": true,
+            "default": "first day of this month",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "to",
+            "label": "To",
+            "type": "date",
+            "required": true,
+            "default": "today",
+            "source": null,
+            "options": []
+        },
+        {
+            "name": "supplier",
+            "label": "Supplier",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "suppliers",
+            "options": []
+        },
+        {
+            "name": "payment_method",
+            "label": "Payment Method",
+            "type": "select",
+            "required": false,
+            "default": null,
+            "source": "list",
+            "options": [
+                {
+                    "value": "Cash",
+                    "label": "cash"
+                },
+                {
+                    "value": "Card",
+                    "label": "card"
+                },
+                {
+                    "value": "Cheque",
+                    "label": "cheque"
+                },
+                {
+                    "value": "Band",
+                    "label": "bank"
+                }
+            ]
+        }
+    ],
+    "columns": [
+        {
+            "key": "payment_no",
+            "label": "Payment No",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "payment_date",
+            "label": "Payment Date",
+            "align": "left",
+            "format": "date",
+            "total": false
+        },
+        {
+            "key": "supplier_code",
+            "label": "Supplier Code",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "supplier_name",
+            "label": "Supplier Name",
+            "align": "left",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "paid_invoices",
+            "label": "Paid Invoices",
+            "align": "right",
+            "format": "text",
+            "total": false
+        },
+        {
+            "key": "cash_payment",
+            "label": "Cash Payment",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "card_payment",
+            "label": "Card Payment",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "cheque_payment",
+            "label": "Cheque Payment",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "bank_transfer",
+            "label": "Bank Transfer",
+            "align": "left",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "payment_amount",
+            "label": "Payment Amount",
+            "align": "right",
+            "format": "money",
+            "total": true
+        },
+        {
+            "key": "bank_account",
+            "label": "Bank Account",
+            "align": "right",
+            "format": "number",
+            "total": true
+        },
+        {
+            "key": "note",
+            "label": "Note",
+            "align": "left",
+            "format": "text",
+            "total": false
+        }
+    ],
+    "layout": {
+        "page_size": "A4",
+        "orientation": "auto",
+        "margins": "normal",
+        "font_size": "normal",
+        "wrap_text": true,
+        "table_lines": "grid",
+        "header": {
+            "show_company": true,
+            "show_branch": false,
+            "text": "",
+            "align": "center",
+            "show_filters": true,
+            "repeat": false
+        },
+        "footer": {
+            "text": "",
+            "show_generated": true,
+            "show_page_numbers": true
+        },
+        "colors": {
+            "title": "#0F172A",
+            "header_bg": "#F1F5F9",
+            "header_text": "#334155",
+            "stripe_bg": "",
+            "border": "#E2E8F0"
+        }
+    },
+    "is_published": true,
+    "sort_order": 1
+}
