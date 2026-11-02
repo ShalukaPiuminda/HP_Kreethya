@@ -1,5 +1,6 @@
 import type { StockItem, Store } from './inventory';
 import type { ChequeBank } from './payment-options';
+import type { SerialWarranty } from './warranty';
 
 export interface HpCustomer {
   id: number;
@@ -134,6 +135,7 @@ export interface HpReturn {
 
 export interface HpAgreement {
   id: number;
+  warranties?: SerialWarranty[];
   invoice_no: string;
   agreement_no: string;
   reference_no?: string | null;

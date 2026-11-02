@@ -68,6 +68,7 @@ import { MobileInput } from '@/components/mobile-input';
 import { SearchSelect } from '@/components/search-select';
 import { ScanInput } from '@/components/scan-input';
 import { StockQtyInput } from '@/components/stock-qty-input';
+import { WarrantyLineBadge } from '@/components/warranty-line-badge';
 import { findItemByScan } from '@/lib/barcode';
 import {
   Badge,
@@ -1228,6 +1229,7 @@ export default function SalesPage() {
                             </Badge>
                           )}
                           {item.is_serialized && <Badge icon={Barcode} tone="indigo">Serialized item</Badge>}
+                          <WarrantyLineBadge item={item} saleDate={form.invoice_date} />
                         </div>
                       )}
 

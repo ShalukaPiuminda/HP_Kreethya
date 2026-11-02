@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Barcode, Boxes, Plus, type LucideIcon } from 'lucide-react';
+import { Barcode, Boxes, Plus, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { normalizeBarcode } from '@/lib/barcode';
 import {
@@ -45,6 +45,12 @@ export interface Item {
   is_batch: boolean;
   default_batch_price_mode: 'batch' | 'average' | 'last';
   is_serialized: boolean;
+  has_warranty?: boolean;
+  warranty_period?: number | null;
+  warranty_unit?: WarrantyUnit | null;
+  supplier_warranty_period?: number | null;
+  supplier_warranty_unit?: WarrantyUnit | null;
+  warranty_terms?: string | null;
   reorder_level: number;
   sales_criteria_enabled: boolean;
   min_sales_qty: number | null;
@@ -59,6 +65,8 @@ export interface Item {
   color?: Color | null;
 }
 
+export type WarrantyUnit = 'days' | 'months' | 'years';
+
 export interface ItemFormState {
   item_description: string;
   barcode: string;
@@ -69,6 +77,12 @@ export interface ItemFormState {
   is_batch: boolean;
   default_batch_price_mode: 'batch' | 'average' | 'last';
   is_serialized: boolean;
+  has_warranty: boolean;
+  warranty_period: string;
+  warranty_unit: WarrantyUnit;
+  supplier_warranty_period: string;
+  supplier_warranty_unit: WarrantyUnit;
+  warranty_terms: string;
   reorder_level: string;
   sales_criteria_enabled: boolean;
   min_sales_qty: string;
@@ -91,6 +105,12 @@ const DEFAULT_FORM: ItemFormState = {
   is_batch: false,
   default_batch_price_mode: 'batch',
   is_serialized: false,
+  has_warranty: false,
+  warranty_period: '',
+  warranty_unit: 'months',
+  supplier_warranty_period: '',
+  supplier_warranty_unit: 'months',
+  warranty_terms: '',
   reorder_level: '0',
   sales_criteria_enabled: false,
   min_sales_qty: '',
@@ -226,6 +246,26 @@ function ToggleCard({
   );
 }
 
+function WarrantyUnitSelect({
+  value,
+  onChange,
+}: {
+  value: WarrantyUnit;
+  onChange: (unit: WarrantyUnit) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value as WarrantyUnit)}
+      className="w-28 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+    >
+      <option value="days">Days</option>
+      <option value="months">Months</option>
+      <option value="years">Years</option>
+    </select>
+  );
+}
+
 function itemToForm(item: Item): ItemFormState {
   return {
     item_description: item.item_description,
@@ -237,6 +277,14 @@ function itemToForm(item: Item): ItemFormState {
     is_batch: item.is_batch,
     default_batch_price_mode: item.default_batch_price_mode || 'batch',
     is_serialized: item.is_serialized,
+    has_warranty: Boolean(item.has_warranty),
+    warranty_period: item.warranty_period ? String(item.warranty_period) : '',
+    warranty_unit: item.warranty_unit || 'months',
+    supplier_warranty_period: item.supplier_warranty_period
+      ? String(item.supplier_warranty_period)
+      : '',
+    supplier_warranty_unit: item.supplier_warranty_unit || 'months',
+    warranty_terms: item.warranty_terms ?? '',
     reorder_level: String(item.reorder_level ?? 0),
     sales_criteria_enabled: item.sales_criteria_enabled,
     min_sales_qty: item.min_sales_qty ? String(item.min_sales_qty) : '',
@@ -337,6 +385,9 @@ export function ItemFormModal({
       ...(form.brand_id === '' ? ['Select a brand.'] : []),
       ...(form.make_id === '' ? ['Select a make.'] : []),
       ...(form.color_id === '' ? ['Select a color.'] : []),
+      ...(form.has_warranty && !(Number(form.warranty_period) > 0)
+        ? ['Enter the customer warranty period, or turn off warranty.']
+        : []),
       ...(form.sales_criteria_enabled &&
       form.min_sales_qty.trim() === '' &&
       form.max_sales_qty.trim() === '' &&
@@ -458,6 +509,14 @@ export function ItemFormModal({
         is_batch: form.is_batch,
         default_batch_price_mode: form.is_batch ? form.default_batch_price_mode : 'batch',
         is_serialized: form.is_serialized,
+        has_warranty: form.has_warranty,
+        warranty_period: form.has_warranty ? Number(form.warranty_period) : null,
+        warranty_unit: form.warranty_unit,
+        supplier_warranty_period: form.has_warranty && form.supplier_warranty_period
+          ? Number(form.supplier_warranty_period)
+          : null,
+        supplier_warranty_unit: form.supplier_warranty_unit,
+        warranty_terms: form.has_warranty ? form.warranty_terms.trim() || null : null,
         reorder_level: Number(form.reorder_level || 0),
         sales_criteria_enabled: form.sales_criteria_enabled,
         min_sales_qty: form.sales_criteria_enabled && form.min_sales_qty
@@ -719,6 +778,113 @@ export function ItemFormModal({
                 </OperationField>
               </div>
             )}
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                      form.has_warranty ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'
+                    }`}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">Warranty included</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      Customer warranty starts on the sale date; supplier warranty starts on the GRN date.
+                    </p>
+                  </div>
+                </div>
+                <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setForm((current) => ({ ...current, has_warranty: false }))}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                      !form.has_warranty ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm((current) => ({ ...current, has_warranty: true }))}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                      form.has_warranty ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    Yes
+                  </button>
+                </div>
+              </div>
+
+              {form.has_warranty && (
+                <div className="mt-4 space-y-4">
+                  <p className="text-xs leading-5 text-slate-500">
+                    {form.is_serialized
+                      ? 'Warranty is tracked per serial number. Claims are found by serial.'
+                      : 'Without serial numbers, warranty is tracked per invoice line (quantity sold). Claims are found by sales or HP invoice number.'}
+                  </p>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <OperationField label="Customer warranty period">
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={form.warranty_period}
+                          onChange={(event) =>
+                            setForm((current) => ({ ...current, warranty_period: event.target.value }))
+                          }
+                          placeholder="e.g. 12"
+                          className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                        />
+                        <WarrantyUnitSelect
+                          value={form.warranty_unit}
+                          onChange={(unit) => setForm((current) => ({ ...current, warranty_unit: unit }))}
+                        />
+                      </div>
+                    </OperationField>
+                    <OperationField label="Supplier warranty period (optional)">
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={form.supplier_warranty_period}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              supplier_warranty_period: event.target.value,
+                            }))
+                          }
+                          placeholder="No supplier warranty"
+                          className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                        />
+                        <WarrantyUnitSelect
+                          value={form.supplier_warranty_unit}
+                          onChange={(unit) =>
+                            setForm((current) => ({ ...current, supplier_warranty_unit: unit }))
+                          }
+                        />
+                      </div>
+                    </OperationField>
+                  </div>
+                  <OperationField label="Warranty terms (optional)">
+                    <textarea
+                      rows={2}
+                      maxLength={2000}
+                      value={form.warranty_terms}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, warranty_terms: event.target.value }))
+                      }
+                      placeholder="e.g. Covers manufacturing defects only. Physical or water damage not covered."
+                      className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </OperationField>
+                </div>
+              )}
+            </section>
 
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

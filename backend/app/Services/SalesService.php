@@ -26,7 +26,8 @@ class SalesService
     public function __construct(
         private readonly StockService $stockService,
         private readonly AccountingService $accountingService,
-        private readonly ChequeEntryService $chequeEntryService
+        private readonly ChequeEntryService $chequeEntryService,
+        private readonly WarrantyService $warrantyService
     ) {}
 
     public function createAdvance(array $data, User $user): TAdvancCusPayment
@@ -330,6 +331,21 @@ class SalesService
                         "items.{$line['index']}.item_code" => $exception->getMessage(),
                     ]);
                 }
+
+                $this->warrantyService->recordSale(
+                    'SALE',
+                    $invoiceNo,
+                    $data['invoice_date'],
+                    $customer->Code,
+                    $customer->name,
+                    $customer->phone,
+                    $line['item'],
+                    $line['serial_numbers'],
+                    $line['batch_no'],
+                    (int) $line['qty'],
+                    $user->BC,
+                    $user->username
+                );
             }
 
             $this->recordCustomerLedger(
@@ -711,6 +727,16 @@ class SalesService
                         "items.{$line['index']}.invoice_detail_id" => $exception->getMessage(),
                     ]);
                 }
+
+                $this->warrantyService->recordReturn(
+                    $invoice->Invoice_no,
+                    $item,
+                    $detail->batch_no,
+                    (int) $line['qty'],
+                    $line['serial_numbers'],
+                    $user->BC,
+                    $user->username
+                );
             }
 
             $invoice->returned_amount = round((float) $invoice->returned_amount + $returnTotal, 2);

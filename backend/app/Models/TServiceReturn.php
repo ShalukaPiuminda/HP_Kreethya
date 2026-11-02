@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class TServiceReturn extends Model
 {
     protected $table = 't_service_returns';
-    protected $fillable = ['ticket_no', 'return_date', 'customer_nic', 'customer_code', 'customer_name', 'customer_phone', 'item_code', 'item_serial_no', 'problem_description', 'intake_condition', 'is_warranty', 'expected_completion_date', 'assigned_technician', 'repair_summary', 'completed_date', 'status', 'BC', 'UID'];
+    protected $fillable = ['ticket_no', 'return_date', 'customer_nic', 'customer_code', 'customer_name', 'customer_phone', 'item_code', 'item_serial_no', 'problem_description', 'intake_condition', 'is_warranty', 'serial_warranty_id', 'warranty_expiry', 'sale_no', 'warranty_claim_id', 'expected_completion_date', 'assigned_technician', 'repair_summary', 'completed_date', 'handed_over_at', 'handed_over_to', 'handed_over_nic', 'handover_note', 'handed_over_by', 'status', 'BC', 'UID'];
     public $timestamps = false;
 
     protected $casts = [
@@ -15,7 +15,19 @@ class TServiceReturn extends Model
         'expected_completion_date' => 'date:Y-m-d',
         'completed_date' => 'date:Y-m-d',
         'is_warranty' => 'boolean',
+        'warranty_expiry' => 'date:Y-m-d',
+        'handed_over_at' => 'datetime',
     ];
+
+    public function serialWarranty()
+    {
+        return $this->belongsTo(SerialWarranty::class);
+    }
+
+    public function warrantyClaim()
+    {
+        return $this->belongsTo(WarrantyClaim::class);
+    }
 
     public function customer()
     {

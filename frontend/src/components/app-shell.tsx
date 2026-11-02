@@ -41,6 +41,7 @@ import {
   ReceiptText,
   RefreshCcw,
   RotateCcw,
+  ScanSearch,
   ScrollText,
   ShieldCheck,
   ShoppingCart,
@@ -158,6 +159,13 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Service',
     items: [
       { label: 'Service Tickets', href: '/dashboard/service', icon: Wrench, module: 'service' },
+    ],
+  },
+  {
+    label: 'Warranty',
+    items: [
+      { label: 'Warranty Claims', href: '/dashboard/warranty-claims', icon: ShieldCheck, module: 'warranty-claims' },
+      { label: 'Serial Lookup', href: '/dashboard/warranty-lookup', icon: ScanSearch, module: 'warranty-lookup' },
     ],
   },
   {

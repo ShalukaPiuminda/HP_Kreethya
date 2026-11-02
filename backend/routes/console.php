@@ -7,7 +7,14 @@ use App\Services\Sms\InstallmentReminderService;
 use Database\Seeders\DeveloperUserSeeder;
 use App\Models\CustomReport;
 use App\Services\ReportDemoDataService;
+use App\Services\WarrantyService;
 use App\Services\Reports\CustomReportFileStore;
+
+Artisan::command('warranty:backfill {--branch=}', function (WarrantyService $service) {
+    $units = $service->backfill($this->option('branch') ? (string) $this->option('branch') : null);
+
+    $this->info("Serial warranties rebuilt from {$units} purchase/sale movement(s).");
+})->purpose('Rebuild per-serial warranty records for items that include warranty.');
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

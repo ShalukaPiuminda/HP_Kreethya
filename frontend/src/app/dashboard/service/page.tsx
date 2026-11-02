@@ -1,24 +1,35 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Banknote,
   CheckCircle2,
   ClipboardCheck,
   Eye,
   HandCoins,
+  Handshake,
+  LoaderCircle,
   PackageCheck,
   Pencil,
   Plus,
+  Printer,
   ReceiptText,
   RefreshCcw,
+  RotateCcw,
   Search,
+  ShieldCheck,
+  ShieldOff,
   Trash2,
   Truck,
   UserRoundCog,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import { CancelWarrantyDialog, restoreWarranty } from '@/components/cancel-warranty-dialog';
+import { SerialWarrantyCard } from '@/components/serial-warranty-card';
+import { formatDate, type SerialLookupUnit } from '@/lib/warranty';
 import {
   LoadingTableRow,
   OperationActions,
@@ -48,7 +59,8 @@ type TicketAction =
   | 'complete-repair'
   | 'invoice'
   | 'customer-payment'
-  | 'supplier-payment';
+  | 'supplier-payment'
+  | 'handover';
 
 interface TicketForm {
   return_date: string;
@@ -57,7 +69,6 @@ interface TicketForm {
   item_serial_no: string;
   problem_description: string;
   intake_condition: string;
-  is_warranty: boolean;
   expected_completion_date: string;
 }
 
@@ -77,6 +88,8 @@ interface ActionForm {
   amount: string;
   payment_method: string;
   bank_detail_id: string;
+  handed_over_to: string;
+  handed_over_nic: string;
 }
 
 function blankTicketForm(): TicketForm {
@@ -87,7 +100,6 @@ function blankTicketForm(): TicketForm {
     item_serial_no: '',
     problem_description: '',
     intake_condition: '',
-    is_warranty: false,
     expected_completion_date: '',
   };
 }
@@ -109,10 +121,21 @@ function blankActionForm(options?: ServiceOptions): ActionForm {
     amount: '',
     payment_method: 'cash',
     bank_detail_id: options?.bank_accounts[0]?.id?.toString() ?? '',
+    handed_over_to: '',
+    handed_over_nic: '',
   };
 }
 
 export default function ServicePage() {
+  return (
+    <Suspense fallback={null}>
+      <ServiceWorkspacePage />
+    </Suspense>
+  );
+}
+
+function ServiceWorkspacePage() {
+  const searchParams = useSearchParams();
   const { hasPermission } = useAuth();
   const canRead = hasPermission('service', 'can_read');
   const canCreate = hasPermission('service', 'can_create');
@@ -190,6 +213,43 @@ export default function ServicePage() {
 
   const selectedItem = options?.items.find((item) => item.item_code === ticketForm.item_code);
 
+  // Direct tickets are paid repairs. If the serial is still under warranty, point the user to
+  // Warranty Claims: warranty work starts there and comes here through "Send to Service".
+  const [coveredUnit, setCoveredUnit] = useState<SerialLookupUnit | null>(null);
+  const [warrantyChecking, setWarrantyChecking] = useState(false);
+
+  const checkSerialWarranty = useCallback(async (itemCode: string, serial: string) => {
+    if (!itemCode || !serial.trim()) {
+      setCoveredUnit(null);
+      return;
+    }
+    setWarrantyChecking(true);
+    try {
+      const params = new URLSearchParams({ item_code: itemCode, serial: serial.trim() });
+      const response = await api.get<SerialLookupUnit[]>(`/v1/service-tickets/warranty-check?${params.toString()}`);
+      setCoveredUnit((response.data ?? []).find((unit) => unit.customer_warranty_valid) ?? null);
+    } catch {
+      setCoveredUnit(null);
+    } finally {
+      setWarrantyChecking(false);
+    }
+  }, []);
+
+  // Tickets opened from a warranty claim keep the claim's unit.
+  const ticketFromClaim = Boolean(editingTicket?.warranty_claim_id);
+
+  // Deep link from a warranty claim: /dashboard/service?ticket=SRV-...
+  const ticketParam = searchParams.get('ticket');
+  useEffect(() => {
+    if (!ticketParam || tickets.length === 0) return;
+    const match = tickets.find((ticket) => ticket.ticket_no === ticketParam);
+    if (!match) return;
+    const timer = window.setTimeout(() => {
+      setSelectedTicket((current) => (current?.id === match.id ? current : match));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [ticketParam, tickets]);
+
   if (!canRead) {
     return (
       <OperationNotice type="error">
@@ -206,6 +266,7 @@ export default function ServicePage() {
       item_code: options?.items[0]?.item_code ?? '',
     });
     setNotice(null);
+    setCoveredUnit(null);
     setShowTicketForm(true);
   };
 
@@ -218,9 +279,9 @@ export default function ServicePage() {
       item_serial_no: ticket.item_serial_no ?? '',
       problem_description: ticket.problem_description,
       intake_condition: ticket.intake_condition ?? '',
-      is_warranty: ticket.is_warranty,
       expected_completion_date: dateValue(ticket.expected_completion_date),
     });
+    setCoveredUnit(null);
     setShowTicketForm(true);
   };
 
@@ -244,6 +305,10 @@ export default function ServicePage() {
       setEditingTicket(null);
       await loadData();
       if (response.data) setSelectedTicket(response.data);
+      // Intake receipt for the customer as soon as a new ticket is created.
+      if (!editingTicket && response.data) {
+        window.open(`/dashboard/service/${response.data.id}/print?doc=intake`, '_blank');
+      }
       setNotice({
         type: 'success',
         message: editingTicket
@@ -437,9 +502,15 @@ export default function ServicePage() {
                       <div className="font-mono text-xs font-bold text-indigo-700">{ticket.ticket_no}</div>
                       <div className="mt-1 text-xs text-slate-400">{displayDate(ticket.return_date)}</div>
                       {ticket.is_warranty && (
-                        <span className="mt-2 inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">
-                          Warranty
+                        <span
+                          title={ticket.warranty_expiry ? `Warranty until ${formatDate(ticket.warranty_expiry)}` : undefined}
+                          className="mt-2 inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700"
+                        >
+                          Warranty{ticket.warranty_expiry ? ` · ${formatDate(ticket.warranty_expiry)}` : ''}
                         </span>
+                      )}
+                      {ticket.warranty_claim && (
+                        <div className="mt-1 font-mono text-[10px] text-slate-400">Claim {ticket.warranty_claim.claim_no}</div>
                       )}
                     </td>
                     <td className="px-5 py-4">
@@ -560,7 +631,11 @@ export default function ServicePage() {
               <OperationField label="Item" required>
                 <SearchSelect
                   value={ticketForm.item_code}
-                  onChange={(value) => setTicketForm({ ...ticketForm, item_code: value, item_serial_no: '' })}
+                  onChange={(value) => {
+                    setTicketForm({ ...ticketForm, item_code: value, item_serial_no: '' });
+                    setCoveredUnit(null);
+                  }}
+                  disabled={ticketFromClaim}
                   options={(options?.items ?? []).map((item) => ({ value: item.item_code, label: `${item.item_code} - ${item.item_description}` }))}
                   placeholder="Select item"
                   searchPlaceholder="Search by code or description..."
@@ -569,12 +644,50 @@ export default function ServicePage() {
                 />
               </OperationField>
               <OperationField label="Serial Number" required={Boolean(selectedItem?.is_serialized)}>
-                <input value={ticketForm.item_serial_no} onChange={(event) => setTicketForm({ ...ticketForm, item_serial_no: event.target.value })} className={inputClass} required={Boolean(selectedItem?.is_serialized)} />
+                <input
+                  value={ticketForm.item_serial_no}
+                  onChange={(event) => {
+                    setTicketForm({ ...ticketForm, item_serial_no: event.target.value });
+                    setCoveredUnit(null);
+                  }}
+                  onBlur={() => {
+                    if (!ticketFromClaim) void checkSerialWarranty(ticketForm.item_code, ticketForm.item_serial_no);
+                  }}
+                  disabled={ticketFromClaim}
+                  className={inputClass}
+                  required={Boolean(selectedItem?.is_serialized)}
+                />
               </OperationField>
-              <label className="flex items-center gap-3 self-end rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800">
-                <input type="checkbox" checked={ticketForm.is_warranty} onChange={(event) => setTicketForm({ ...ticketForm, is_warranty: event.target.checked })} className="h-4 w-4 rounded border-violet-300 text-violet-600" />
-                Warranty service
-              </label>
+              <div className="flex items-center gap-2 self-end rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                {warrantyChecking ? (
+                  <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-indigo-500" />
+                ) : (
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-slate-400" />
+                )}
+                {ticketFromClaim
+                  ? `Opened from warranty claim ${editingTicket?.warranty_claim?.claim_no ?? ''}.`
+                  : 'Paid repair. Warranty repairs start in Warranty Claims.'}
+              </div>
+
+              {coveredUnit && !ticketFromClaim && (
+                <div className="space-y-3 md:col-span-2">
+                  <OperationNotice type="warning">
+                    This unit is under customer warranty
+                    {coveredUnit.warranty?.customer_warranty_expiry
+                      ? ` until ${formatDate(coveredUnit.warranty.customer_warranty_expiry)}`
+                      : ''}
+                    . For a free warranty repair, create a Warranty Claim and use &quot;Send to Service&quot;.
+                    Continue here only for a chargeable repair (e.g. physical damage not covered).
+                  </OperationNotice>
+                  <Link
+                    href={`/dashboard/warranty-claims?serial=${encodeURIComponent(coveredUnit.item_serial_no ?? '')}&item=${encodeURIComponent(coveredUnit.item_code)}`}
+                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    Create warranty claim instead
+                  </Link>
+                </div>
+              )}
               <OperationField label="Reported Problem" required className="md:col-span-2">
                 <textarea value={ticketForm.problem_description} onChange={(event) => setTicketForm({ ...ticketForm, problem_description: event.target.value })} className={inputClass} rows={4} required />
               </OperationField>
@@ -596,9 +709,11 @@ export default function ServicePage() {
         <TicketWorkspace
           ticket={selectedTicket}
           canUpdate={canUpdate}
+          canManageWarranty={hasPermission('warranty-claims', 'can_update')}
           options={options}
           onClose={() => setSelectedTicket(null)}
           onAction={openAction}
+          onNotice={(message) => setNotice({ type: 'success', message })}
         />
       )}
 
@@ -622,16 +737,72 @@ export default function ServicePage() {
 function TicketWorkspace({
   ticket,
   canUpdate,
+  canManageWarranty,
   options,
   onClose,
   onAction,
+  onNotice,
 }: {
   ticket: ServiceTicket;
   canUpdate: boolean;
+  canManageWarranty: boolean;
   options: ServiceOptions | null;
   onClose: () => void;
   onAction: (action: TicketAction) => void;
+  onNotice: (message: string) => void;
 }) {
+  // Warranty unit of this ticket (validity, previous claims, service history).
+  const [unit, setUnit] = useState<SerialLookupUnit | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [warrantyBusy, setWarrantyBusy] = useState(false);
+  const [warrantyActionError, setWarrantyActionError] = useState<string | null>(null);
+
+  const loadUnit = useCallback(async () => {
+    const query: Record<string, string> | null = ticket.item_serial_no
+      ? { serial: ticket.item_serial_no }
+      : ticket.sale_no
+        ? { invoice: ticket.sale_no }
+        : null;
+    if (!query) {
+      setUnit(null);
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ item_code: ticket.item_code, ...query });
+      const response = await api.get<SerialLookupUnit[]>(`/v1/service-tickets/warranty-check?${params.toString()}`);
+      const units = response.data ?? [];
+      setUnit(
+        units.find((candidate) => ticket.serial_warranty_id && candidate.warranty?.id === ticket.serial_warranty_id)
+        ?? units[0]
+        ?? null
+      );
+    } catch {
+      setUnit(null);
+    }
+  }, [ticket.item_code, ticket.item_serial_no, ticket.sale_no, ticket.serial_warranty_id]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadUnit(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadUnit]);
+
+  const restore = async () => {
+    if (!unit?.warranty) return;
+    setWarrantyBusy(true);
+    setWarrantyActionError(null);
+    try {
+      await restoreWarranty(unit.warranty.id);
+      await loadUnit();
+      onNotice('Warranty restored.');
+    } catch (error) {
+      setWarrantyActionError(getApiErrorMessage(error, 'Unable to restore the warranty.'));
+    } finally {
+      setWarrantyBusy(false);
+    }
+  };
+
+  const warrantyStatus = unit?.warranty?.status;
+
   const invoice = latest(ticket.invoices);
   const dispatch = latest(ticket.dispatches);
   const customerOutstanding = invoice
@@ -658,8 +829,29 @@ function TicketWorkspace({
               <span className="text-sm text-slate-300">{nextStepLabel(ticket.status)}</span>
             </div>
           </div>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`/dashboard/service/${ticket.id}/print?doc=intake`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3.5 py-2.5 text-xs font-bold text-white transition hover:bg-white/20"
+            >
+              <Printer className="h-4 w-4" />
+              Intake receipt
+            </a>
+            {ticket.status === 'handed_over' && !ticket.warranty_claim_id && (
+              <a
+                href={`/dashboard/service/${ticket.id}/print?doc=handover`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3.5 py-2.5 text-xs font-bold text-white transition hover:bg-white/20"
+              >
+                <Printer className="h-4 w-4" />
+                Handover receipt
+              </a>
+            )}
           {canUpdate && actions.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <>
               {actions.map((item) => (
                 <button
                   key={item.action}
@@ -672,9 +864,106 @@ function TicketWorkspace({
                   {item.label}
                 </button>
               ))}
-            </div>
+            </>
           )}
+          </div>
         </div>
+
+        {(ticket.is_warranty || unit) && (
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              {ticket.is_warranty ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Free warranty repair{ticket.warranty_expiry ? ` · warranty until ${formatDate(ticket.warranty_expiry)}` : ''}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 ring-1 ring-inset ring-slate-200">
+                  Paid repair
+                </span>
+              )}
+              {ticket.sale_no && <span className="font-mono text-xs text-slate-500">Sold on {ticket.sale_no}</span>}
+              {ticket.warranty_claim && (
+                <Link
+                  href={`/dashboard/warranty-claims?claim=${ticket.warranty_claim.id}`}
+                  className="font-mono text-xs font-semibold text-indigo-600 hover:underline"
+                >
+                  Claim {ticket.warranty_claim.claim_no}
+                </Link>
+              )}
+            </div>
+            {warrantyActionError && <OperationNotice type="error">{warrantyActionError}</OperationNotice>}
+            {unit && (
+              <SerialWarrantyCard
+                unit={unit}
+                compact
+                actions={canManageWarranty && unit.warranty ? (
+                  warrantyStatus === 'cancelled' ? (
+                    <button
+                      type="button"
+                      disabled={warrantyBusy}
+                      onClick={() => void restore()}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-emerald-200 hover:text-emerald-700 disabled:opacity-50"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Restore warranty
+                    </button>
+                  ) : warrantyStatus === 'active' ? (
+                    <button
+                      type="button"
+                      onClick={() => setCancelOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50"
+                    >
+                      <ShieldOff className="h-3.5 w-3.5" />
+                      Cancel warranty
+                    </button>
+                  ) : undefined
+                ) : undefined}
+              />
+            )}
+          </section>
+        )}
+
+        {ticket.status === 'completed' && ticket.warranty_claim && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">
+            <p className="flex items-center gap-2">
+              <Handshake className="h-4 w-4" />
+              Warranty repair done. Hand the item over to the customer from warranty claim {ticket.warranty_claim.claim_no}.
+            </p>
+            <Link
+              href={`/dashboard/warranty-claims?claim=${ticket.warranty_claim.id}`}
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+            >
+              Open claim
+            </Link>
+          </div>
+        )}
+
+        {ticket.status === 'handed_over' && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            <p className="flex items-center gap-2 font-bold"><Handshake className="h-4 w-4" /> Handed over to {ticket.handed_over_to}</p>
+            <p className="mt-1 text-xs">
+              {ticket.handed_over_at ? new Date(ticket.handed_over_at).toLocaleString('en-LK') : ''}
+              {ticket.handed_over_nic ? ` · NIC ${ticket.handed_over_nic}` : ''}
+              {ticket.handed_over_by ? ` · by ${ticket.handed_over_by}` : ''}
+            </p>
+            {ticket.handover_note && <p className="mt-1">{ticket.handover_note}</p>}
+          </div>
+        )}
+
+        {cancelOpen && unit?.warranty && (
+          <CancelWarrantyDialog
+            warrantyId={unit.warranty.id}
+            description={`${unit.item?.item_description ?? unit.item_code} · ${unit.item_serial_no ? `Serial ${unit.item_serial_no}` : `Invoice ${unit.warranty.sale_no ?? '-'}`}`}
+            isInvoiceLine={!unit.item_serial_no}
+            onClose={() => setCancelOpen(false)}
+            onCancelled={async () => {
+              setCancelOpen(false);
+              await loadUnit();
+              onNotice('Warranty cancelled.');
+            }}
+          />
+        )}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <DetailCard label="Customer" value={ticket.customer_name} help={ticket.customer_nic} />
@@ -858,15 +1147,35 @@ function ActionModal({
             </div>
           </>
         )}
+        {action === 'invoice' && ticket.is_warranty && (
+          <OperationNotice type="success">
+            Free under warranty: the customer pays nothing. The supplier cost of {formatCurrency(numeric(dispatch?.repair_cost))} is absorbed by the company.
+          </OperationNotice>
+        )}
         {action === 'invoice' && (
           <>
-            <OperationField label="Service Charge" help={`Supplier cost added automatically: ${formatCurrency(numeric(dispatch?.repair_cost))}`} required>
-              <input type="number" min="0" step="0.01" value={form.service_charge} onChange={(event) => onChange({ ...form, service_charge: event.target.value })} className={inputClass} required />
-            </OperationField>
+            {!ticket.is_warranty && (
+              <OperationField label="Service Charge" help={`Supplier cost added automatically: ${formatCurrency(numeric(dispatch?.repair_cost))}`} required>
+                <input type="number" min="0" step="0.01" value={form.service_charge} onChange={(event) => onChange({ ...form, service_charge: event.target.value })} className={inputClass} required />
+              </OperationField>
+            )}
             <OperationField label="Invoice Note">
               <textarea value={form.notes} onChange={(event) => onChange({ ...form, notes: event.target.value })} className={inputClass} rows={3} />
             </OperationField>
           </>
+        )}
+        {action === 'handover' && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <OperationField label="Received by (name)" required>
+              <input value={form.handed_over_to} onChange={(event) => onChange({ ...form, handed_over_to: event.target.value })} className={inputClass} required />
+            </OperationField>
+            <OperationField label="NIC">
+              <input value={form.handed_over_nic} onChange={(event) => onChange({ ...form, handed_over_nic: event.target.value })} className={inputClass} />
+            </OperationField>
+            <OperationField label="Handover note" className="md:col-span-2">
+              <textarea value={form.notes} onChange={(event) => onChange({ ...form, notes: event.target.value })} className={inputClass} rows={3} placeholder="Accessories returned, condition, customer remarks..." />
+            </OperationField>
+          </div>
         )}
         {(action === 'customer-payment' || action === 'supplier-payment') && (
           <>
@@ -913,7 +1222,8 @@ function ActionModal({
             || (action === 'dispatch' && !form.supplier_code)
             || (action === 'assign-technician' && !form.technician_name.trim())
             || (action === 'complete-repair' && !form.repair_details.trim())
-            || (action === 'invoice' && numeric(form.service_charge) + numeric(dispatch?.repair_cost) <= 0)
+            || (action === 'invoice' && !ticket.is_warranty && numeric(form.service_charge) + numeric(dispatch?.repair_cost) <= 0)
+            || (action === 'handover' && form.handed_over_to.trim().length < 2)
             || ((action === 'customer-payment' || action === 'supplier-payment') && (
               numeric(form.amount) <= 0 || numeric(form.amount) > maximum || (needsBank && !form.bank_detail_id)
             ))
@@ -933,6 +1243,7 @@ const SERVICE_STATUSES: ServiceStatus[] = [
   'invoiced',
   'customer_paid',
   'completed',
+  'handed_over',
 ];
 
 const ACTION_METADATA: Record<TicketAction, {
@@ -947,6 +1258,7 @@ const ACTION_METADATA: Record<TicketAction, {
   invoice: { title: 'Create Service Invoice', dateLabel: 'Invoice Date', submitLabel: 'Create Invoice' },
   'customer-payment': { title: 'Record Customer Payment', dateLabel: 'Payment Date', submitLabel: 'Post Customer Payment' },
   'supplier-payment': { title: 'Settle Service Supplier', dateLabel: 'Payment Date', submitLabel: 'Post Supplier Payment' },
+  handover: { title: 'Hand Over to Customer', dateLabel: 'Handover Date', submitLabel: 'Hand Over Item' },
 };
 
 const inputClass =
@@ -976,11 +1288,16 @@ function availableActions(
   if (ticket.status === 'repaired') {
     actions.push({ action: 'invoice', label: 'Create Invoice', icon: ReceiptText });
   }
-  if (customerOutstanding > 0 && ['invoiced', 'customer_paid'].includes(ticket.status)) {
+  // Warranty repairs are free: never collect a customer payment for them.
+  if (!ticket.is_warranty && customerOutstanding > 0 && ['invoiced', 'customer_paid'].includes(ticket.status)) {
     actions.push({ action: 'customer-payment', label: 'Customer Payment', icon: HandCoins });
   }
-  if (supplierOutstanding > 0 && ticket.status !== 'completed') {
+  if (supplierOutstanding > 0 && !['completed', 'handed_over'].includes(ticket.status)) {
     actions.push({ action: 'supplier-payment', label: 'Supplier Payment', icon: Banknote });
+  }
+  // Warranty-claim tickets are handed over from the claim, not here.
+  if (ticket.status === 'completed' && !ticket.warranty_claim_id) {
+    actions.push({ action: 'handover', label: 'Hand Over to Customer', icon: Handshake });
   }
   return actions;
 }
@@ -1024,6 +1341,14 @@ function actionPayload(action: TicketAction, form: ActionForm): Record<string, u
       invoice_note: form.notes || null,
     };
   }
+  if (action === 'handover') {
+    return {
+      handed_over_at: form.action_date,
+      handed_over_to: form.handed_over_to.trim(),
+      handed_over_nic: form.handed_over_nic.trim() || null,
+      handover_note: form.notes || null,
+    };
+  }
   return {
     payment_date: form.action_date,
     amount: numeric(form.amount),
@@ -1042,6 +1367,7 @@ function actionSuccessMessage(action: TicketAction) {
     invoice: 'Service invoice created.',
     'customer-payment': 'Customer payment posted.',
     'supplier-payment': 'Supplier payment posted.',
+    handover: 'Item handed over to the customer.',
   } satisfies Record<TicketAction, string>)[action];
 }
 
@@ -1071,7 +1397,8 @@ function nextStepLabel(status: ServiceStatus) {
     repaired: 'Ready to create the customer invoice.',
     invoiced: 'Awaiting customer and supplier settlements.',
     customer_paid: 'Customer settled; complete supplier settlement.',
-    completed: 'Item released and workflow closed.',
+    completed: 'Work done and settled. Hand the item over to the customer (warranty repairs: from the claim).',
+    handed_over: 'Item returned to the customer. Ticket closed.',
   } satisfies Record<ServiceStatus, string>)[status];
 }
 

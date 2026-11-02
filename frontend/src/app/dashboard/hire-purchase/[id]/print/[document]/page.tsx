@@ -6,6 +6,22 @@ import { ArrowLeft, Printer } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { type HpAgreement, money, shortDate } from '@/lib/hp';
+import { lineWarranties, warrantySummary } from '@/lib/warranty';
+
+function LineWarranty({
+  agreement,
+  itemCode,
+  serialNumbers,
+  batchNo,
+}: {
+  agreement: HpAgreement;
+  itemCode: string;
+  serialNumbers?: string[] | null;
+  batchNo?: string | null;
+}) {
+  const text = warrantySummary(lineWarranties(agreement.warranties, itemCode, serialNumbers, batchNo));
+  return text ? <div className="mt-0.5 text-xs font-semibold text-slate-700">{text}</div> : null;
+}
 
 const DOCUMENT_TITLES: Record<string, string> = {
   agreement: 'Hire Purchase Agreement',
@@ -80,7 +96,7 @@ export default function HpPrintPage() {
         {!isReceipt && <section className="mt-8 overflow-hidden rounded-lg border border-slate-300">
           <table className="w-full text-sm">
             <thead className="bg-slate-100 text-left text-xs uppercase"><tr><th className="px-4 py-3">Item</th><th className="px-4 py-3">Serial / Batch</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3 text-right">Unit price</th><th className="px-4 py-3 text-right">Net value</th></tr></thead>
-            <tbody>{agreement.details.map((detail) => <tr key={detail.id} className="border-t border-slate-200"><td className="px-4 py-3"><div className="font-semibold">{detail.item_code}</div><div className="text-xs text-slate-500">{detail.item_description}</div></td><td className="px-4 py-3">{detail.serial_numbers?.join(', ') || detail.batch_no || '—'}</td><td className="px-4 py-3 text-right">{detail.qty}</td><td className="px-4 py-3 text-right">{money(detail.unit_price)}</td><td className="px-4 py-3 text-right font-semibold">{money(detail.net_value)}</td></tr>)}</tbody>
+            <tbody>{agreement.details.map((detail) => <tr key={detail.id} className="border-t border-slate-200"><td className="px-4 py-3"><div className="font-semibold">{detail.item_code}</div><div className="text-xs text-slate-500">{detail.item_description}</div><LineWarranty agreement={agreement} itemCode={detail.item_code} serialNumbers={detail.serial_numbers} batchNo={detail.batch_no} /></td><td className="px-4 py-3">{detail.serial_numbers?.join(', ') || detail.batch_no || '—'}</td><td className="px-4 py-3 text-right">{detail.qty}</td><td className="px-4 py-3 text-right">{money(detail.unit_price)}</td><td className="px-4 py-3 text-right font-semibold">{money(detail.net_value)}</td></tr>)}</tbody>
           </table>
         </section>}
 

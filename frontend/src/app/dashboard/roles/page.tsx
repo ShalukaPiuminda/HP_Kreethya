@@ -248,6 +248,18 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
         coverage: ['Arrears list & print (read)', 'Record letters as printed (create)', 'Letter formats, timing, next print dates (update)'],
       },
       {
+        module: 'warranty-claims',
+        label: 'Warranty Claims',
+        description: 'Receive warranty claims by serial, send to supplier, repair, replace or reject.',
+        coverage: ['Claims list (read)', 'New claims (create)', 'Status changes & unit replacement (update)'],
+      },
+      {
+        module: 'warranty-lookup',
+        label: 'Serial Lookup',
+        description: 'Look up a serial number for warranty status, sale, supplier and history.',
+        coverage: ['Serial warranty lookup'],
+      },
+      {
         module: 'service',
         label: 'Service',
         description: 'Service tickets, dispatches, repairs, and service billing.',

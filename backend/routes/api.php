@@ -221,6 +221,14 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('role.permission:service');
     Route::get('/v1/service-tickets/summary', [App\Http\Controllers\Api\V1\ServiceTicketController::class, 'summary'])
         ->middleware('role.permission:service');
+    Route::get('/v1/service-tickets/warranty-check', [App\Http\Controllers\Api\V1\ServiceTicketController::class, 'warrantyCheck'])
+        ->middleware('role.permission:service');
+    Route::get('/v1/service-tickets/{serviceTicket}/print-data', [App\Http\Controllers\Api\V1\ServiceTicketController::class, 'printData'])
+        ->whereNumber('serviceTicket')
+        ->middleware('role.permission:service');
+    Route::post('/v1/service-tickets/{serviceTicket}/handover', [App\Http\Controllers\Api\V1\ServiceTicketController::class, 'handover'])
+        ->whereNumber('serviceTicket')
+        ->middleware('role.permission:service,can_update');
     Route::post('/v1/service-tickets/{serviceTicket}/dispatch', [App\Http\Controllers\Api\V1\ServiceTicketController::class, 'dispatch'])
         ->middleware('role.permission:service,can_update');
     Route::post('/v1/service-tickets/{serviceTicket}/receive-back', [App\Http\Controllers\Api\V1\ServiceTicketController::class, 'receiveBack'])
@@ -237,6 +245,50 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('role.permission:service,can_update');
     Route::apiResource('/v1/service-tickets', App\Http\Controllers\Api\V1\ServiceTicketController::class)
         ->middleware('role.permission:service');
+
+    // Warranty: serial lookup and warranty claims
+    Route::get('/v1/warranty/lookup/{serial}', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'lookup'])
+        ->where('serial', '.*')
+        ->middleware('role.permission:warranty-lookup');
+    Route::get('/v1/warranty/invoice/{invoice}', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'lookupInvoice'])
+        ->where('invoice', '.*')
+        ->middleware('role.permission:warranty-lookup');
+    Route::get('/v1/warranty-claims/lookup/{serial}', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'lookup'])
+        ->where('serial', '.*')
+        ->middleware('role.permission:warranty-claims');
+    Route::get('/v1/warranty-claims/invoice/{invoice}', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'lookupInvoice'])
+        ->where('invoice', '.*')
+        ->middleware('role.permission:warranty-claims');
+    Route::get('/v1/warranty-claims/summary', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'summary'])
+        ->middleware('role.permission:warranty-claims');
+    Route::post('/v1/warranty-claims/warranties/{warrantyId}/cancel', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'cancelWarranty'])
+        ->whereNumber('warrantyId')
+        ->middleware('role.permission:warranty-claims,can_update');
+    Route::post('/v1/warranty-claims/warranties/{warrantyId}/restore', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'restoreWarranty'])
+        ->whereNumber('warrantyId')
+        ->middleware('role.permission:warranty-claims,can_update');
+    Route::post('/v1/warranty-claims/{id}/status', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'changeStatus'])
+        ->whereNumber('id')
+        ->middleware('role.permission:warranty-claims,can_update');
+    Route::post('/v1/warranty-claims/{id}/send-to-service', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'sendToService'])
+        ->whereNumber('id')
+        ->middleware('role.permission:warranty-claims,can_update');
+    Route::get('/v1/warranty-claims/{id}/print-data', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'printData'])
+        ->whereNumber('id')
+        ->middleware('role.permission:warranty-claims');
+    Route::get('/v1/warranty-claims/{id}/replacement-options', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'replacementOptions'])
+        ->whereNumber('id')
+        ->middleware('role.permission:warranty-claims,can_update');
+    Route::get('/v1/warranty-claims', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'index'])
+        ->middleware('role.permission:warranty-claims');
+    Route::post('/v1/warranty-claims', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'store'])
+        ->middleware('role.permission:warranty-claims');
+    Route::get('/v1/warranty-claims/{id}', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'show'])
+        ->whereNumber('id')
+        ->middleware('role.permission:warranty-claims');
+    Route::put('/v1/warranty-claims/{id}', [App\Http\Controllers\Api\V1\WarrantyClaimController::class, 'update'])
+        ->whereNumber('id')
+        ->middleware('role.permission:warranty-claims');
 
     // Financial operations
     Route::get('/v1/finance/options', [App\Http\Controllers\Api\V1\FinancialController::class, 'options'])

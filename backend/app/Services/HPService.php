@@ -31,7 +31,8 @@ class HPService
     public function __construct(
         private readonly StockService $stockService,
         private readonly AccountingService $accountingService,
-        private readonly ChequeEntryService $chequeEntryService
+        private readonly ChequeEntryService $chequeEntryService,
+        private readonly WarrantyService $warrantyService
     ) {}
 
     public function calculate(array $data, string $branchCode): array
@@ -224,6 +225,21 @@ class HPService
                         "items.{$line['index']}.item_code" => $exception->getMessage(),
                     ]);
                 }
+
+                $this->warrantyService->recordSale(
+                    'HP',
+                    $invoiceNo,
+                    $data['invoice_date'],
+                    $customer->Code,
+                    $customer->name,
+                    $customer->phone,
+                    $line['item'],
+                    $line['serial_numbers'],
+                    $line['batch_no'],
+                    (int) $line['qty'],
+                    $user->BC,
+                    $user->username
+                );
             }
 
             $this->createSchedule($agreement, $calc, $user);
@@ -901,6 +917,16 @@ class HPService
                     throw ValidationException::withMessages(['items' => $exception->getMessage()]);
                 }
 
+                $this->warrantyService->recordReturn(
+                    $agreement->invoice_no,
+                    $detail->item,
+                    $detail->batch_no,
+                    $qty,
+                    $serialNumbers,
+                    $user->BC,
+                    $user->username
+                );
+
                 THirePurchaseReturnDetail::create([
                     'hpreturn_code' => $returnNo,
                     'item_code' => $detail->item_code,
@@ -1017,6 +1043,7 @@ class HPService
                 'conversions',
                 'returns.details',
                 'advanceAllocations.advance',
+                'warranties',
             ])
             ->firstOrFail();
     }

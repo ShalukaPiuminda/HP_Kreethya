@@ -7,6 +7,7 @@ import { useParams } from 'next/navigation';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { displayDate, numeric } from '@/lib/purchases';
 import type { SalesInvoice } from '@/lib/sales';
+import { lineWarranties, warrantySummary } from '@/lib/warranty';
 
 interface CompanyProfile {
   id: number;
@@ -108,6 +109,14 @@ export default function SalesInvoicePrintPage() {
 
   const { invoice, company, branch } = payload;
   const address = company?.address || branch?.address;
+  // Terms of each warranty item on the invoice, printed once per item.
+  const warrantyTerms = Array.from(
+    new Map(
+      invoice.details
+        .filter((detail) => detail.item?.has_warranty && detail.item.warranty_terms)
+        .map((detail) => [detail.Item_code, detail.item?.warranty_terms ?? ''] as [string, string])
+    ).entries()
+  );
 
 
   return (
@@ -213,7 +222,15 @@ export default function SalesInvoicePrintPage() {
               {invoice.details.map((detail, index) => (
                 <tr key={detail.id} className={`break-inside-avoid align-top ${index > 0 ? 'border-t border-dashed border-black' : ''}`}>
                   <td className="break-words px-1 py-1 font-bold">{detail.Item_code}</td>
-                  <td className="break-words px-1 py-1">{detail.Item_description || detail.item?.item_description || '—'}</td>
+                  <td className="break-words px-1 py-1">
+                    {detail.Item_description || detail.item?.item_description || '—'}
+                    {(() => {
+                      const text = warrantySummary(
+                        lineWarranties(invoice.warranties, detail.Item_code, detail.serial_numbers, detail.batch_no)
+                      );
+                      return text ? <div className="text-[11px] font-bold">{text}</div> : null;
+                    })()}
+                  </td>
                   <td className="break-words px-1 py-1">{detail.serial_numbers?.join(', ') || detail.batch_no || '—'}</td>
                   <td className="px-1 py-1 text-right">{detail.QTY}</td>
                   <td className="px-1 py-1 text-right">{formatAmount(numeric(detail.Unit_price))}</td>
@@ -224,6 +241,17 @@ export default function SalesInvoicePrintPage() {
             </tbody>
           </table>
         </section>
+
+        {warrantyTerms.length > 0 && (
+          <section className="mt-2 break-inside-avoid border border-black px-2 py-1 text-[11px]">
+            <h2 className="font-bold uppercase">Warranty terms</h2>
+            {warrantyTerms.map(([itemCode, terms]) => (
+              <p key={itemCode} className="mt-0.5">
+                <span className="font-bold">{itemCode}:</span> {terms}
+              </p>
+            ))}
+          </section>
+        )}
 
         <section className="mt-2 grid break-inside-avoid grid-cols-[1.25fr_1fr] gap-8">
           <div className="border border-black px-2 py-1">

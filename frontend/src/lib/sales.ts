@@ -1,4 +1,5 @@
 import type { PurchaseStore } from './purchases';
+import type { SerialWarranty } from './warranty';
 
 export interface SalesCustomer {
   id: number;
@@ -32,6 +33,8 @@ export interface SalesInvoiceDetail {
     item_code: string;
     item_description: string;
     is_serialized: boolean;
+    has_warranty?: boolean;
+    warranty_terms?: string | null;
   };
   return_details?: Array<{
     id: number;
@@ -74,6 +77,7 @@ export interface SalesReturn {
 
 export interface SalesInvoice {
   id: number;
+  warranties?: SerialWarranty[];
   Invoice_no: string;
   reference_no: string | null;
   Invoice_date: string;
