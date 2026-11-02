@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hire Purchase ERP",
-  description: "Hire Purchase Enterprise Resource Planning System",
+  title: "Stylo-Piyestra",
+  description: "Stylo-Piyestra Hire Purchase Enterprise Resource Planning System",
 };
 
 export default function RootLayout({
