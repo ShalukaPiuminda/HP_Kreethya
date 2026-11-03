@@ -1,3 +1,5 @@
+import { dateInputValue } from './purchases';
+
 export interface AccountCategory {
   id: number;
   name: string;
@@ -91,7 +93,7 @@ export interface BankEntry {
   credit_account?: LedgerAccount;
 }
 
-export const financeToday = () => new Date().toISOString().slice(0, 10);
+export const financeToday = () => dateInputValue();
 
 export function financeMoney(value: string | number | null | undefined) {
   return new Intl.NumberFormat('en-LK', {
