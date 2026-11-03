@@ -1,6 +1,7 @@
 import type { StockItem, Store } from './inventory';
 import type { ChequeBank } from './payment-options';
 import type { SerialWarranty } from './warranty';
+import { dateInputValue } from './purchases';
 
 export interface HpCustomer {
   id: number;
@@ -202,7 +203,7 @@ export interface HpCalculation {
   grace_period_days: number;
 }
 
-export const today = () => new Date().toISOString().slice(0, 10);
+export const today = () => dateInputValue();
 
 export function money(value: string | number | null | undefined) {
   return new Intl.NumberFormat('en-LK', {
