@@ -158,6 +158,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/v1/purchase-receipts/{purchaseReceipt}/serials', [App\Http\Controllers\Api\V1\PurchaseReceiptController::class, 'updateSerials'])
         ->middleware('role.permission:purchases');
 
+    Route::get('/v1/barcode-prints', [App\Http\Controllers\Api\V1\BarcodePrintController::class, 'index'])
+        ->middleware('role.permission:purchases');
+    Route::post('/v1/barcode-prints/mark', [App\Http\Controllers\Api\V1\BarcodePrintController::class, 'markPrinted'])
+        ->middleware('role.permission:purchases');
+    Route::post('/v1/barcode-prints/unmark', [App\Http\Controllers\Api\V1\BarcodePrintController::class, 'markUnprinted'])
+        ->middleware('role.permission:purchases');
+
     Route::get('/v1/supplier-payments/outstanding', [App\Http\Controllers\Api\V1\SupplierPaymentController::class, 'outstanding'])
         ->middleware('role.permission:purchases');
     Route::get('/v1/supplier-payments', [App\Http\Controllers\Api\V1\SupplierPaymentController::class, 'index'])

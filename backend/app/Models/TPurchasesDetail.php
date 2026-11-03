@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class TPurchasesDetail extends Model
 {
     protected $table = 't_purchases_details';
-    protected $fillable = ['Invoice_no', 'Ref_no', 'Invoice_date', 'Item_code', 'Item_s_code', 'Item_description', 'batch_no', 'store_id', 'QTY', 'free_qty', 'Unit_price', 'Sales_price', 'serial_numbers', 'Discount', 'discount_type', 'discount_value', 'Net_value', 'BC', 'UID'];
+    protected $fillable = ['Invoice_no', 'Ref_no', 'Invoice_date', 'Item_code', 'Item_s_code', 'Item_description', 'batch_no', 'store_id', 'QTY', 'free_qty', 'Unit_price', 'Sales_price', 'serial_numbers', 'Discount', 'discount_type', 'discount_value', 'Net_value', 'barcode_printed_at', 'barcode_printed_qty', 'barcode_print_count', 'barcode_printed_by', 'BC', 'UID'];
     public $timestamps = false;
 
     protected $casts = [
@@ -20,6 +20,9 @@ class TPurchasesDetail extends Model
         'Discount' => 'decimal:2',
         'discount_value' => 'decimal:2',
         'Net_value' => 'decimal:2',
+        'barcode_printed_at' => 'datetime',
+        'barcode_printed_qty' => 'integer',
+        'barcode_print_count' => 'integer',
     ];
 
     public function purchase()
