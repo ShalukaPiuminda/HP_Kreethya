@@ -48,7 +48,7 @@ export default function DeveloperPage() {
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [testPhone, setTestPhone] = useState('');
-  const [testMessage, setTestMessage] = useState('Test message from the HP ERP system.');
+  const [testMessage, setTestMessage] = useState('Test message from the Stylo-Piyestra system.');
   const [testing, setTesting] = useState(false);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
