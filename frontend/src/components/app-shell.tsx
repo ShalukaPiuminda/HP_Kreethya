@@ -9,6 +9,7 @@ import {
   BadgeCheck,
   BadgePercent,
   Banknote,
+  Barcode,
   Boxes,
   BriefcaseBusiness,
   Building2,
@@ -141,6 +142,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Purchase Orders', href: '/dashboard/purchase-orders', icon: ClipboardList, module: 'purchases' },
       { label: 'Purchase Receipts', href: '/dashboard/purchases', icon: PackageCheck, module: 'purchases' },
       { label: 'Supplier Payments', href: '/dashboard/supplier-payments', icon: HandCoins, module: 'purchases' },
+      { label: 'Barcode Printing', href: '/dashboard/barcode-printing', icon: Barcode, module: 'purchases' },
     ],
   },
   {
