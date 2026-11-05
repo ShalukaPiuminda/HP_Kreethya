@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { CircleDollarSign, FileText, LoaderCircle, MessageSquareText } from 'lucide-react';
+import { CalendarClock, CircleDollarSign, FileText, HandCoins, LoaderCircle, MessageSquareText, Package, Receipt, Wallet } from 'lucide-react';
 import { OperationMetric, OperationModal, StatusPill } from '@/components/operation-ui';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { type HpAgreementStatement, type HpInstallment, money, shortDate, today } from '@/lib/hp';
@@ -93,12 +93,39 @@ export function AgreementStatementModal({
         {!data && !error && <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><LoaderCircle className="h-5 w-5 animate-spin" /> Loading statement...</div>}
         {agreement && totals && (
           <>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-600">
-              <span><span className="text-slate-400">Invoice</span> {agreement.invoice_no} · {shortDate(agreement.invoice_date)}</span>
-              <span><span className="text-slate-400">Scheme</span> {agreement.schema_type}</span>
-              <span><span className="text-slate-400">Contract</span> {money(agreement.contract_amount)} (down payment {money(agreement.down_payment)})</span>
-              {agreement.details?.length > 0 && <span><span className="text-slate-400">Items</span> {agreement.details.map((line) => `${line.item_description} × ${line.qty}`).join(', ')}</span>}
-              <StatusPill status={agreement.status} />
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 px-5 py-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Agreement details</span>
+                <StatusPill status={agreement.status} />
+              </div>
+              <div className="grid gap-px bg-slate-200/70 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { icon: Receipt, label: 'Invoice', value: agreement.invoice_no, sub: shortDate(agreement.invoice_date) },
+                  { icon: CalendarClock, label: 'Scheme', value: agreement.schema_type, sub: `${totals.instalment_count} installment(s)` },
+                  { icon: Wallet, label: 'Contract amount', value: money(agreement.contract_amount), sub: 'Total agreement value' },
+                  { icon: HandCoins, label: 'Down payment', value: money(agreement.down_payment), sub: 'Paid at sale' },
+                ].map(({ icon: Icon, label, value, sub }) => (
+                  <div key={label} className="flex items-start gap-3 bg-white px-5 py-4">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Icon className="h-4 w-4" /></span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-slate-500">{label}</div>
+                      <div className="truncate font-semibold text-slate-900" title={String(value ?? '')}>{value || '—'}</div>
+                      <div className="text-xs text-slate-400">{sub}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {agreement.details?.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 border-t border-slate-200/70 px-5 py-3">
+                  <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Package className="h-3.5 w-3.5" /> Items</span>
+                  {agreement.details.map((line, index) => (
+                    <span key={index} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm">
+                      {line.item_description}
+                      <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-xs font-bold text-indigo-700">× {line.qty}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
