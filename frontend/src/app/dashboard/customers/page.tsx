@@ -1,9 +1,9 @@
 'use client';
 
-import { Lock, UsersRound } from 'lucide-react';
+import { BadgeCheck, Lock, UsersRound } from 'lucide-react';
 import { CrudWorkspace, type CrudRecord } from '@/components/crud-workspace';
 import { useAuth } from '@/lib/auth-context';
-import { nicFormHooks, normalizeNic } from '@/lib/nic';
+import { nicFormHooks, normalizeNic, parseNic } from '@/lib/nic';
 
 interface CustomerRecord extends CrudRecord {
   Code: string;
@@ -60,6 +60,32 @@ export default function CustomersPage() {
         const message = nicHooks.confirmSubmit(payload, editing);
         const reason = String(payload.nic_change_reason ?? '').trim();
         return message && reason ? `${message}\n\nReason: ${reason}` : message;
+      }}
+      renderConfirmation={(payload, message) => {
+        const details = parseNic(String(payload.NIC ?? ''));
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+              <BadgeCheck aria-hidden="true" className="h-6 w-6 shrink-0 text-indigo-600" />
+              <div className="min-w-0">
+                <p className="break-words text-sm font-semibold text-slate-900">{String(payload.name ?? '')}</p>
+                <p className="mt-1 break-all font-mono text-lg font-bold tracking-wide text-indigo-700">{details?.nic || 'No NIC provided'}</p>
+              </div>
+            </div>
+            {details && (
+              <dl className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 p-4 text-sm">
+                {[
+                  ['NIC format', details.format === 'new' ? 'New · 12 digits' : 'Old · 9 digits + letter'],
+                  ['Gender', details.gender],
+                  ['Date of birth', `${details.birthday} ${details.birthYear}`],
+                ].map(([label, value]) => <div key={label} className={label === 'Date of birth' ? 'col-span-2' : ''}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-800">{value}</dd></div>)}
+              </dl>
+            )}
+            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+              {message.split('\n').filter((line) => line && !line.startsWith('Please confirm') && !/^(Format|Born|Gender):/.test(line)).map((line, index) => <p key={index}>{line}</p>)}
+            </div>
+          </div>
+        );
       }}
       fields={[
         {

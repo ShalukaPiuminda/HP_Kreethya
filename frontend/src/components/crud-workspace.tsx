@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { ApiError, api, getApiErrorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { OperationNotice } from './operation-ui';
+import { OperationModal, OperationNotice } from './operation-ui';
 import { MobileInput, toLocalMobile } from './mobile-input';
 import { SearchSelect } from '@/components/search-select';
 import { usePopupKeyboard } from '@/lib/use-popup-keyboard';
@@ -118,6 +118,7 @@ interface CrudWorkspaceProps<TRecord extends CrudRecord> {
     payload: Record<string, unknown>,
     editingRecord: TRecord | null
   ) => string | null;
+  renderConfirmation?: (payload: Record<string, unknown>, message: string) => React.ReactNode;
 }
 
 export function CrudWorkspace<TRecord extends CrudRecord>({
@@ -141,12 +142,15 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
   preparePayload,
   validateSubmit,
   confirmSubmit,
+  renderConfirmation,
 }: CrudWorkspaceProps<TRecord>) {
   const { hasPermission } = useAuth();
   const [records, setRecords] = useState<TRecord[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pendingConfirmation, setPendingConfirmation] = useState<{ payload: Record<string, unknown>; message: string } | null>(null);
+  const saveInFlight = useRef(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [editingRecord, setEditingRecord] = useState<TRecord | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -274,8 +278,18 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
     }
 
     const confirmMessage = confirmSubmit?.(payload, editingRecord) ?? null;
+    if (confirmMessage && renderConfirmation) {
+      setPendingConfirmation({ payload, message: confirmMessage });
+      return;
+    }
     if (confirmMessage && !window.confirm(confirmMessage)) return;
 
+    await savePayload(payload);
+  };
+
+  const savePayload = async (payload: Record<string, unknown>) => {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
     setSaving(true);
 
     try {
@@ -294,6 +308,8 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
     } catch (error: unknown) {
       setNotice(buildErrorNotice(error, `Unable to save ${singular}.`));
     } finally {
+      setPendingConfirmation(null);
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
@@ -626,6 +642,17 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
             </form>
           </div>
         </div>
+      )}
+      {showForm && pendingConfirmation && renderConfirmation && (
+        <OperationModal title="Review customer details" description="Check the NIC details before saving." width="max-w-lg" icon={Icon} onClose={() => { if (!saveInFlight.current) setPendingConfirmation(null); }}>
+          <div className="p-6">
+            {renderConfirmation(pendingConfirmation.payload, pendingConfirmation.message)}
+            <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-5">
+              <button type="button" disabled={saving} onClick={() => setPendingConfirmation(null)} className="rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50">Go back</button>
+              <button type="button" disabled={saving} onClick={() => void savePayload(pendingConfirmation.payload)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving && <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />}{saving ? 'Saving…' : 'Confirm and save'}</button>
+            </div>
+          </div>
+        </OperationModal>
       )}
     </div>
   );
