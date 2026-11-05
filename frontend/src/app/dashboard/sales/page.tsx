@@ -59,6 +59,7 @@ import {
   Salesperson,
 } from '@/lib/sales';
 import { ChequeEntryFields } from '@/components/cheque-entry-fields';
+import { CustomerAccountSummary } from '@/components/customer-account-summary';
 import type {
   ChequeBank,
   PaymentBankAccount,
@@ -1181,10 +1182,7 @@ export default function SalesPage() {
                   <span className="inline-flex items-center gap-1.5"><Hash className="h-3.5 w-3.5 text-slate-400" />{selectedCustomer.NIC}</span>
                   {selectedCustomer.phone && <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-slate-400" />{selectedCustomer.phone}</span>}
                   {selectedCustomer.address && <span className="inline-flex min-w-0 items-center gap-1.5"><MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="truncate">{selectedCustomer.address}</span></span>}
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200 sm:ml-auto">
-                    <Wallet className="h-3.5 w-3.5" />
-                    Advance {formatCurrency(numeric(selectedCustomer.advance_balance))}
-                  </span>
+                  <CustomerAccountSummary key={form.customer_code} customerCode={form.customer_code} advance={numeric(selectedCustomer.advance_balance)} />
                 </div>
               )}
             </FormSection>
