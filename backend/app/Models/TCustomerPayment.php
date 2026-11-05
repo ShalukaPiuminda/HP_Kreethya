@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class TCustomerPayment extends Model
 {
     protected $table = 't_customer_payments';
-    protected $fillable = ['Payment_no', 'Payment_date', 'Customer_NIC', 'Customer_Name', 'Customer_Phone', 'Payment_note', 'Payment_Amount', 'cash_payment', 'card_payment', 'cheque_payment', 'bank_transfer', 'bank_detail_id', 'BC', 'UID'];
+    protected $fillable = ['Payment_no', 'Payment_date', 'customer_code', 'Customer_NIC', 'Customer_Name', 'Customer_Phone', 'Payment_note', 'Payment_Amount', 'cash_payment', 'card_payment', 'cheque_payment', 'bank_transfer', 'bank_detail_id', 'BC', 'UID'];
     public $timestamps = false;
 
     protected $casts = [
@@ -22,7 +22,7 @@ class TCustomerPayment extends Model
 
     public function customer()
     {
-        return $this->belongsTo(Customer::class, 'Customer_NIC', 'NIC');
+        return $this->belongsTo(Customer::class, 'customer_code', 'Code');
     }
 
     public function allocations()

@@ -157,7 +157,7 @@ export default function CustomerPaymentsPage() {
       (payment) =>
         payment.Payment_no.toLowerCase().includes(term)
         || payment.Customer_Name?.toLowerCase().includes(term)
-        || payment.Customer_NIC.toLowerCase().includes(term)
+        || (payment.Customer_NIC ?? '').toLowerCase().includes(term)
     );
   }, [payments, search]);
 
@@ -168,7 +168,7 @@ export default function CustomerPaymentsPage() {
       (advance) =>
         advance.payment_no.toLowerCase().includes(term)
         || advance.customer_name?.toLowerCase().includes(term)
-        || advance.customer_nic.toLowerCase().includes(term)
+        || (advance.customer_nic ?? '').toLowerCase().includes(term)
     );
   }, [advances, search]);
 

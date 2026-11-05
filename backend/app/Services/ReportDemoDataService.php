@@ -115,7 +115,7 @@ class ReportDemoDataService
             $customerOne = Customer::query()->create([
                 'Code' => self::PREFIX.'-CUS-001',
                 'name' => self::PREFIX.' Customer One',
-                'NIC' => self::PREFIX.'NIC001',
+                'NIC' => '190036600001', // valid format, birth year 1900: never a real customer
                 'phone' => '0777000001',
                 'address' => 'Demo Customer Address 1',
                 'advance_balance' => 0,
@@ -126,7 +126,7 @@ class ReportDemoDataService
             $customerTwo = Customer::query()->create([
                 'Code' => self::PREFIX.'-CUS-002',
                 'name' => self::PREFIX.' Customer Two',
-                'NIC' => self::PREFIX.'NIC002',
+                'NIC' => '190036600002',
                 'phone' => '0777000002',
                 'address' => 'Demo Customer Address 2',
                 'advance_balance' => 0,
@@ -137,7 +137,7 @@ class ReportDemoDataService
             $guarantorOne = MGuarantor::query()->create([
                 'Code' => self::PREFIX.'-GUA-001',
                 'name' => self::PREFIX.' Guarantor One',
-                'NIC' => self::PREFIX.'GUA001',
+                'NIC' => '190036600011',
                 'phone' => '0777000011',
                 'address' => 'Demo Guarantor 1',
                 'BC' => $user->BC,
@@ -147,7 +147,7 @@ class ReportDemoDataService
             $guarantorTwo = MGuarantor::query()->create([
                 'Code' => self::PREFIX.'-GUA-002',
                 'name' => self::PREFIX.' Guarantor Two',
-                'NIC' => self::PREFIX.'GUA002',
+                'NIC' => '190036600012',
                 'phone' => '0777000012',
                 'address' => 'Demo Guarantor 2',
                 'BC' => $user->BC,

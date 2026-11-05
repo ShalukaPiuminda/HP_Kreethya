@@ -39,8 +39,10 @@ class CustomerController extends GeneratedCodeCrudController
     {
         return [
             'name' => [$model ? 'sometimes' : 'required', 'string', 'max:100'],
+            // Optional: cash customers may have none. Valid format when entered.
+            // Credit sales and HP agreements check for a valid NIC themselves.
             'NIC' => [
-                ...$this->nicRules($model === null, $model),
+                ...$this->nicRules(false, $model, optional: true),
                 Rule::unique('customers', 'NIC')->ignore($model?->getKey()),
             ],
             'phone' => $this->mobilePhoneRules(),
@@ -90,6 +92,12 @@ class CustomerController extends GeneratedCodeCrudController
                 && Nic::normalise((string) $validated['NIC']) !== Nic::normalise((string) $record->NIC);
 
             if ($nicChanging && $snapshots->isNicLocked($record)) {
+                if (blank($validated['NIC'])) {
+                    throw ValidationException::withMessages([
+                        'NIC' => 'The NIC cannot be removed: this customer has credit sales or HP agreements, which need a NIC.',
+                    ]);
+                }
+
                 if (! $this->canEditLockedNic($user)) {
                     throw ValidationException::withMessages([
                         'NIC' => 'This customer has credit sales or HP agreements, so their NIC is locked. Ask a manager or admin with the "Edit NIC" permission to change it.',

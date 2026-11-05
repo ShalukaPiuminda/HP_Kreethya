@@ -78,11 +78,12 @@ abstract class BranchScopedCrudController extends BaseController
      * Sri Lankan NIC: 9 digits + V/X, or 12 digits (see App\Support\Nic).
      * When editing, an unchanged NIC is not re-checked, so records created
      * before this rule can still have their other details updated.
+     * $optional: the NIC may be left empty, but must be valid when entered.
      */
-    protected function nicRules(bool $required, ?Model $model = null): array
+    protected function nicRules(bool $required, ?Model $model = null, bool $optional = false): array
     {
         return [
-            $required ? 'required' : 'sometimes',
+            $optional ? 'nullable' : ($required ? 'required' : 'sometimes'),
             'string',
             'max:15',
             function (string $attribute, mixed $value, callable $fail) use ($model): void {
@@ -104,7 +105,9 @@ abstract class BranchScopedCrudController extends BaseController
     protected function normaliseRequest(Request $request): void
     {
         if (is_string($request->input('NIC'))) {
-            $request->merge(['NIC' => Nic::normalise($request->input('NIC'))]);
+            $nic = Nic::normalise($request->input('NIC'));
+            // An empty NIC is stored as NULL: many NULLs are allowed by the unique index, '' is not.
+            $request->merge(['NIC' => $nic === '' ? null : $nic]);
         }
     }
 

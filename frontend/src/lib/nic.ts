@@ -81,26 +81,40 @@ export function nicError(value: string | null | undefined): string | null {
  * Validate-and-confirm hooks for a CrudWorkspace form with an `NIC` field.
  * An edit that leaves the NIC unchanged is neither re-validated nor confirmed,
  * so records created before this rule can still have other details edited.
+ * `optional`: the NIC may be left empty (sent as null); when entered it must be valid.
  */
 export function nicFormHooks<TRecord extends { NIC?: unknown }>(
-  options: { updatesLinkedRecords?: boolean } = {},
+  options: { updatesLinkedRecords?: boolean; optional?: boolean } = {},
 ) {
+  const nicOf = (payload: Record<string, unknown>) => normalizeNic(String(payload.NIC ?? ''));
   const unchanged = (payload: Record<string, unknown>, editing: TRecord | null) =>
-    editing !== null && normalizeNic(String(editing.NIC ?? '')) === normalizeNic(String(payload.NIC ?? ''));
+    editing !== null && normalizeNic(String(editing.NIC ?? '')) === nicOf(payload);
 
   return {
-    preparePayload: (payload: Record<string, unknown>) => ({
-      ...payload,
-      NIC: normalizeNic(String(payload.NIC ?? '')),
-    }),
-    validateSubmit: (payload: Record<string, unknown>, editing: TRecord | null) =>
-      unchanged(payload, editing) ? null : nicError(String(payload.NIC ?? '')),
-    confirmSubmit: (payload: Record<string, unknown>, editing: TRecord | null) =>
-      unchanged(payload, editing)
-        ? null
-        : nicConfirmMessage(String(payload.NIC ?? ''), editing ? String(editing.NIC ?? '') : null, options),
+    preparePayload: (payload: Record<string, unknown>) => {
+      const nic = nicOf(payload);
+      return { ...payload, NIC: nic === '' && options.optional ? null : nic };
+    },
+    validateSubmit: (payload: Record<string, unknown>, editing: TRecord | null) => {
+      if (unchanged(payload, editing)) return null;
+      if (options.optional && nicOf(payload) === '') return null;
+      return nicError(nicOf(payload));
+    },
+    confirmSubmit: (payload: Record<string, unknown>, editing: TRecord | null) => {
+      if (unchanged(payload, editing)) return null;
+      if (options.optional && nicOf(payload) === '') return NO_NIC_CONFIRM;
+      return nicConfirmMessage(nicOf(payload), editing ? String(editing.NIC ?? '') : null, options);
+    },
   };
 }
+
+/** Shown before saving a customer without a NIC. */
+export const NO_NIC_CONFIRM = [
+  'Save this customer without a NIC?',
+  '',
+  'Without a NIC they can only buy with full payment.',
+  'A valid NIC must be added before any credit sale or HP agreement.',
+].join('\n');
 
 /** Message asking the user to double-check the NIC before saving. */
 export function nicConfirmMessage(

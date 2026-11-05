@@ -203,7 +203,7 @@ function ServiceWorkspacePage() {
       const matchesSearch = !term || [
         ticket.ticket_no,
         ticket.customer_name,
-        ticket.customer_nic,
+        ticket.customer_nic ?? '',
         ticket.item_code,
         ticket.item_serial_no ?? '',
       ].some((value) => value.toLowerCase().includes(term));
@@ -966,7 +966,7 @@ function TicketWorkspace({
         )}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <DetailCard label="Customer" value={ticket.customer_name} help={ticket.customer_nic} />
+          <DetailCard label="Customer" value={ticket.customer_name} help={ticket.customer_nic ?? undefined} />
           <DetailCard label="Item Serial" value={ticket.item_serial_no || 'Not recorded'} help={ticket.item_code} />
           <DetailCard label="Customer Due" value={formatCurrency(customerOutstanding)} help={invoice?.invoice_no ?? 'Not invoiced'} />
           <DetailCard label="Supplier Due" value={formatCurrency(supplierOutstanding)} help={dispatch?.dispatch_no ?? 'No external repair'} />

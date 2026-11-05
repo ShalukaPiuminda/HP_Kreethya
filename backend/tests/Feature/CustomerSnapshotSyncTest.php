@@ -175,7 +175,18 @@ class CustomerSnapshotSyncTest extends TestCase
     public function test_existing_invalid_nic_does_not_block_editing_other_details(): void
     {
         DB::table('customers')->where('id', $this->customer->id)->update(['NIC' => 'OLD-NIC-01']);
-        $invoiceNo = $this->postInvoice($this->customer->fresh());
+        $sale = [
+            'invoice_date' => '2026-11-04', 'customer_code' => $this->customer->Code, 'store_id' => $this->store->id,
+            'items' => [['item_code' => $this->item->item_code, 'batch_no' => 'SALE-BATCH', 'qty' => 1]],
+        ];
+
+        // An invalid legacy NIC blocks credit, but a fully paid sale is fine.
+        $this->postJson('/api/v1/sales-invoices', $sale + ['cash_payment' => 200])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('customer_code');
+        $invoiceNo = $this->postJson('/api/v1/sales-invoices', $sale + ['cash_payment' => 500])
+            ->assertCreated()
+            ->json('data.Invoice_no');
 
         // Name change with the legacy NIC untouched is allowed and flows to the invoice.
         $this->putJson('/api/v1/customers/'.$this->customer->id, [
@@ -283,6 +294,81 @@ class CustomerSnapshotSyncTest extends TestCase
         $this->assertDatabaseHas('customer_change_logs', [
             'table_name' => 't_invoice_sums', 'reason' => 'New NIC card issued', 'UID' => 'manager',
         ]);
+    }
+
+    public function test_customer_can_be_created_without_nic_but_entered_nic_must_be_valid(): void
+    {
+        $base = ['phone' => '0771112223', 'address' => 'Galle'];
+
+        $this->postJson('/api/v1/customers', $base + ['name' => 'Cash One'])
+            ->assertCreated()
+            ->assertJsonPath('data.NIC', null);
+        // Empty text is stored as NULL, so several NIC-less customers can exist.
+        $this->postJson('/api/v1/customers', $base + ['name' => 'Cash Two', 'NIC' => '  '])
+            ->assertCreated()
+            ->assertJsonPath('data.NIC', null);
+
+        $this->postJson('/api/v1/customers', $base + ['name' => 'Bad NIC', 'NIC' => '0000000000'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('NIC');
+    }
+
+    public function test_customer_without_nic_can_buy_cash_but_not_credit_or_hp(): void
+    {
+        $cashCustomer = Customer::create([
+            'Code' => 'CUST0003', 'name' => 'Walk-in Cash', 'NIC' => null,
+            'advance_balance' => 0, 'BC' => 'HQ', 'UID' => 'admin',
+        ]);
+
+        // Advance is linked by customer code and can be used on a fully paid sale.
+        $this->postJson('/api/v1/customer-advances', [
+            'payment_date' => '2026-11-04', 'customer_code' => 'CUST0003',
+            'amount' => 100, 'cash_payment' => 100,
+        ])->assertCreated()->assertJsonPath('data.customer_code', 'CUST0003');
+
+        $this->postJson('/api/v1/sales-invoices', [
+            'invoice_date' => '2026-11-04', 'customer_code' => 'CUST0003',
+            'store_id' => $this->store->id, 'advance_amount' => 100, 'cash_payment' => 400,
+            'items' => [['item_code' => $this->item->item_code, 'batch_no' => 'SALE-BATCH', 'qty' => 1]],
+        ])->assertCreated()
+            ->assertJsonPath('data.payment_status', 'paid')
+            ->assertJsonPath('data.Customer_NIC', null);
+        $this->assertSame(1, $cashCustomer->fresh()->advances()->count());
+
+        // Anything left on credit needs a valid NIC.
+        $this->postJson('/api/v1/sales-invoices', [
+            'invoice_date' => '2026-11-04', 'customer_code' => 'CUST0003',
+            'store_id' => $this->store->id, 'cash_payment' => 200,
+            'items' => [['item_code' => $this->item->item_code, 'batch_no' => 'SALE-BATCH', 'qty' => 1]],
+        ])->assertStatus(422)->assertJsonValidationErrors('customer_code');
+
+        // HP needs a valid NIC too (checked before anything else is created).
+        try {
+            app(\App\Services\HPService::class)->createAgreement(['customer_code' => 'CUST0003'], User::where('username', 'admin')->first());
+            $this->fail('HP agreement was allowed for a customer without a NIC.');
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->assertArrayHasKey('customer_code', $exception->errors());
+        }
+        $this->assertDatabaseCount('t_hire_purchase_sums', 0);
+
+        // Once a valid NIC is added, credit is allowed (customer is not locked yet: no credit so far).
+        $this->putJson('/api/v1/customers/'.$cashCustomer->id, ['NIC' => '951234567V'])->assertOk();
+        $this->postJson('/api/v1/sales-invoices', [
+            'invoice_date' => '2026-11-04', 'customer_code' => 'CUST0003',
+            'store_id' => $this->store->id, 'cash_payment' => 200,
+            'items' => [['item_code' => $this->item->item_code, 'batch_no' => 'SALE-BATCH', 'qty' => 1]],
+        ])->assertCreated();
+        $this->assertDatabaseHas('t_invoice_sums', ['customer_code' => 'CUST0003', 'Customer_NIC' => '951234567V', 'payment_status' => 'paid']);
+    }
+
+    public function test_locked_customer_nic_cannot_be_removed(): void
+    {
+        $this->postInvoice($this->customer); // credit sale
+
+        $this->putJson('/api/v1/customers/'.$this->customer->id, ['NIC' => '', 'nic_change_reason' => 'Remove it please'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('NIC');
+        $this->assertDatabaseHas('customers', ['id' => $this->customer->id, 'NIC' => '901234567V']);
     }
 
     public function test_sync_command_dry_run_changes_nothing_and_apply_fixes_stale_records(): void

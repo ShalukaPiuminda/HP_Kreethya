@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class TAdvancCusPayment extends Model
 {
     protected $table = 't_advanc_cus_payments';
-    protected $fillable = ['payment_no', 'payment_date', 'customer_nic', 'customer_name', 'customer_phone', 'payment_note', 'amount', 'remaining_amount', 'cash_payment', 'card_payment', 'cheque_payment', 'bank_transfer', 'bank_detail_id', 'is_carried_forward', 'carried_forward_invoice_no', 'BC', 'UID'];
+    protected $fillable = ['payment_no', 'payment_date', 'customer_code', 'customer_nic', 'customer_name', 'customer_phone', 'payment_note', 'amount', 'remaining_amount', 'cash_payment', 'card_payment', 'cheque_payment', 'bank_transfer', 'bank_detail_id', 'is_carried_forward', 'carried_forward_invoice_no', 'BC', 'UID'];
     public $timestamps = false;
 
     protected $casts = [
@@ -24,7 +24,7 @@ class TAdvancCusPayment extends Model
 
     public function customer()
     {
-        return $this->belongsTo(Customer::class, 'customer_nic', 'NIC');
+        return $this->belongsTo(Customer::class, 'customer_code', 'Code');
     }
 
     public function allocations()

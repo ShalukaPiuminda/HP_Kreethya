@@ -7,7 +7,7 @@ export interface HpCustomer {
   id: number;
   Code: string;
   name: string;
-  NIC: string;
+  NIC: string | null;
   phone?: string | null;
   address?: string | null;
   advance_balance: string | number;

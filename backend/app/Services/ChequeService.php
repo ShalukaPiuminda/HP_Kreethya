@@ -365,7 +365,7 @@ class ChequeService
 
         $this->assertFullyMapped($remaining);
 
-        $customerCode = Customer::query()
+        $customerCode = $payment->customer_code ?: Customer::query()
             ->where('NIC', $payment->Customer_NIC)
             ->where('BC', $user->BC)
             ->firstOrFail()
@@ -386,8 +386,12 @@ class ChequeService
             ->lockForUpdate()
             ->firstOrFail();
         $customer = Customer::query()
-            ->where('NIC', $advance->customer_nic)
             ->where('BC', $user->BC)
+            ->when(
+                $advance->customer_code,
+                fn ($query, $code) => $query->where('Code', $code),
+                fn ($query) => $query->where('NIC', $advance->customer_nic)
+            )
             ->lockForUpdate()
             ->firstOrFail();
         $remaining = (float) $cheque->amount;

@@ -81,7 +81,7 @@ export interface ReportOptionCustomer {
   id: number;
   Code: string;
   name: string;
-  NIC: string;
+  NIC: string | null;
 }
 
 export interface ReportOptionSupplier {

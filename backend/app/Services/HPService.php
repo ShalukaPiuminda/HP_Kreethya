@@ -25,6 +25,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use App\Support\Nic;
 
 class HPService
 {
@@ -85,6 +86,7 @@ class HPService
                 ->where('BC', $user->BC)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $this->assertCustomerHasValidNic($customer);
             $store = Store::query()
                 ->whereKey($data['store_id'])
                 ->where('BC', $user->BC)
@@ -319,6 +321,7 @@ class HPService
                 ->where('BC', $user->BC)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $this->assertCustomerHasValidNic($customer);
             $store = Store::query()
                 ->whereKey($data['store_id'])
                 ->where('BC', $user->BC)
@@ -1330,7 +1333,7 @@ class HPService
     ): void {
         $remaining = $amount;
         $advances = TAdvancCusPayment::query()
-            ->where('customer_nic', $customer->NIC)
+            ->where('customer_code', $customer->Code)
             ->where('BC', $user->BC)
             ->where('remaining_amount', '>', 0)
             ->orderBy('payment_date')
@@ -1409,6 +1412,21 @@ class HPService
             'BC' => $user->BC,
             'UID' => $user->username,
         ]);
+    }
+
+    /**
+     * HP agreements need a valid NIC: customers may be created without one
+     * (cash customers), but it must be added before an HP agreement.
+     */
+    private function assertCustomerHasValidNic(Customer $customer): void
+    {
+        if (! Nic::isValid($customer->NIC)) {
+            throw ValidationException::withMessages([
+                'customer_code' => blank($customer->NIC)
+                    ? "Customer {$customer->Code} has no NIC. A valid NIC is required for HP agreements: add it on the Customers page first."
+                    : "Customer {$customer->Code} has an invalid NIC ({$customer->NIC}). A valid NIC is required for HP agreements: correct it on the Customers page first.",
+            ]);
+        }
     }
 
     private function nextNumber(

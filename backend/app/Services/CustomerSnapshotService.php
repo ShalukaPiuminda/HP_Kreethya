@@ -55,11 +55,11 @@ class CustomerSnapshotService
             'fields' => ['name' => 'customer_name', 'phone' => 'customer_phone'],
         ],
         't_customer_payments' => [
-            'bc' => 'BC', 'code' => null, 'nic' => 'Customer_NIC',
+            'bc' => 'BC', 'code' => 'customer_code', 'nic' => 'Customer_NIC',
             'fields' => ['name' => 'Customer_Name', 'NIC' => 'Customer_NIC', 'phone' => 'Customer_Phone'],
         ],
         't_advanc_cus_payments' => [
-            'bc' => 'BC', 'code' => null, 'nic' => 'customer_nic',
+            'bc' => 'BC', 'code' => 'customer_code', 'nic' => 'customer_nic',
             'fields' => ['name' => 'customer_name', 'NIC' => 'customer_nic', 'phone' => 'customer_phone'],
         ],
         't_hire_purchase_to_sales' => [

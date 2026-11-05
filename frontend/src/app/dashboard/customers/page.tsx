@@ -8,7 +8,7 @@ import { nicFormHooks, normalizeNic } from '@/lib/nic';
 interface CustomerRecord extends CrudRecord {
   Code: string;
   name: string;
-  NIC: string;
+  NIC: string | null;
   phone: string | null;
   address: string | null;
   advance_balance: string;
@@ -24,7 +24,7 @@ function changingLockedNic(editing: CustomerRecord | null, nic: unknown) {
 export default function CustomersPage() {
   const { hasPermission } = useAuth();
   const canEditLockedNic = hasPermission('customer-nic', 'can_update');
-  const nicHooks = nicFormHooks<CustomerRecord>({ updatesLinkedRecords: true });
+  const nicHooks = nicFormHooks<CustomerRecord>({ updatesLinkedRecords: true, optional: true });
 
   return (
     <CrudWorkspace<CustomerRecord>
@@ -43,6 +43,9 @@ export default function CustomersPage() {
         if (nicProblem) return nicProblem;
 
         if (changingLockedNic(editing, payload.NIC)) {
+          if (normalizeNic(String(payload.NIC ?? '')) === '') {
+            return 'The NIC cannot be removed: this customer has credit sales or HP agreements, which need a NIC.';
+          }
           if (!canEditLockedNic) {
             return 'This customer has credit sales or HP agreements, so their NIC is locked. Ask a manager or admin with the "Edit NIC" permission.';
           }
@@ -68,13 +71,12 @@ export default function CustomersPage() {
         {
           name: 'NIC',
           label: 'NIC',
-          required: true,
           placeholder: '901234567V or 199012304567',
           maxLength: 15,
           disabled: (editing) => Boolean(editing?.nic_locked) && !canEditLockedNic,
           help: (editing) => {
             if (!editing?.nic_locked) {
-              return 'Old: 9 digits + V/X. New: 12 digits. You will be asked to confirm it.';
+              return 'Optional for cash customers; required for credit sales and HP. Old: 9 digits + V/X. New: 12 digits.';
             }
             return canEditLockedNic
               ? 'Locked: this customer has credit sales or HP agreements. You can change it, but a reason is required.'
@@ -126,7 +128,7 @@ export default function CustomersPage() {
             <div>
               <div className="font-semibold text-slate-900">{record.name}</div>
               <div className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
-                {record.NIC}
+                {record.NIC || <span className="italic text-slate-400">No NIC</span>}
                 {record.nic_locked && (
                   <span
                     title="NIC locked: credit sales or HP agreements exist"

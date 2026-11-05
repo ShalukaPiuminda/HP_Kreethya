@@ -70,7 +70,7 @@ import { ScanInput } from '@/components/scan-input';
 import { StockQtyInput } from '@/components/stock-qty-input';
 import { WarrantyLineBadge } from '@/components/warranty-line-badge';
 import { findItemByScan } from '@/lib/barcode';
-import { nicConfirmMessage, nicError, normalizeNic } from '@/lib/nic';
+import { NO_NIC_CONFIRM, nicConfirmMessage, nicError, normalizeNic } from '@/lib/nic';
 import {
   Badge,
   DiscountInput,
@@ -710,20 +710,21 @@ export default function SalesPage() {
     event.preventDefault();
     setNotice(null);
 
+    // NIC is optional (cash customers); when entered it must be valid.
     const nic = normalizeNic(customerQuickAdd.NIC);
-    const invalidNic = nicError(nic);
+    const invalidNic = nic === '' ? null : nicError(nic);
     if (invalidNic) {
       setNotice({ type: 'error', message: invalidNic });
       return;
     }
-    if (!window.confirm(nicConfirmMessage(nic))) return;
+    if (!window.confirm(nic === '' ? NO_NIC_CONFIRM : nicConfirmMessage(nic))) return;
 
     setCustomerSaving(true);
 
     try {
       const response = await api.post<SalesCustomer>('/v1/customers', {
         name: customerQuickAdd.name.trim(),
-        NIC: nic,
+        NIC: nic || null,
         phone: customerQuickAdd.phone.trim() || null,
         address: customerQuickAdd.address.trim() || null,
       });
@@ -1525,7 +1526,7 @@ export default function SalesPage() {
                 required
               />
             </OperationField>
-            <OperationField label="NIC" required>
+            <OperationField label="NIC (optional for cash sales)">
               <input
                 value={customerQuickAdd.NIC}
                 onChange={(event) =>
@@ -1537,7 +1538,6 @@ export default function SalesPage() {
                 maxLength={15}
                 placeholder="901234567V or 199012304567"
                 className={inputClass}
-                required
               />
             </OperationField>
             <OperationField label="Mobile number">
@@ -1571,7 +1571,7 @@ export default function SalesPage() {
                 saving={customerSaving}
                 submitLabel="Create customer"
                 onCancel={() => setShowCustomerQuickAdd(false)}
-                disabled={!customerQuickAdd.name.trim() || customerQuickAdd.NIC.trim().length < 9}
+                disabled={!customerQuickAdd.name.trim()}
               />
             </div>
           </form>
