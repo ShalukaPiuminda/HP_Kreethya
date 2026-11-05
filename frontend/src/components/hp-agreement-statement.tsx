@@ -116,14 +116,25 @@ export function AgreementStatementModal({
                 ))}
               </div>
               {agreement.details?.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 border-t border-slate-200/70 px-5 py-3">
-                  <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Package className="h-3.5 w-3.5" /> Items</span>
-                  {agreement.details.map((line, index) => (
-                    <span key={index} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm">
-                      {line.item_description}
-                      <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-xs font-bold text-indigo-700">× {line.qty}</span>
-                    </span>
-                  ))}
+                <div className="space-y-3 border-t border-slate-200/70 bg-slate-50/60 px-5 py-4">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Items</h3>
+                    <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-600">{agreement.details.length}</span>
+                  </div>
+                  <ul className="space-y-2">
+                    {agreement.details.map((line, index) => (
+                      <li key={index} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:items-center sm:px-4">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Package aria-hidden="true" className="h-5 w-5" /></span>
+                        <div className="min-w-0 flex-1 self-center">
+                          <p className="break-words text-sm font-semibold leading-6 text-slate-800">{line.item_description}</p>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-center gap-0.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-indigo-700">
+                          <span className="text-[10px] font-semibold uppercase tracking-wide">Qty</span>
+                          <span className="text-sm font-bold tabular-nums leading-5">{line.qty}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>
