@@ -33,7 +33,7 @@ class GuarantorController extends GeneratedCodeCrudController
         return [
             'name' => [$model ? 'sometimes' : 'required', 'string', 'max:100'],
             'NIC' => [
-                ...$this->nicRules($model === null),
+                ...$this->nicRules($model === null, $model),
                 Rule::unique('m_guarantors', 'NIC')->ignore($model?->getKey()),
             ],
             'phone' => $this->phoneRules(),

@@ -120,6 +120,12 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
         coverage: ['Customer master', 'HP customer picks', 'Sales customer picks'],
       },
       {
+        module: 'customer-nic',
+        label: 'Edit NIC (credit / HP customers)',
+        description: 'Change the NIC of a customer who already has credit sales or HP agreements. A reason is required and logged.',
+        coverage: ['Edit permission unlocks the NIC field', 'Customers without credit or HP can be edited with Customers permission'],
+      },
+      {
         module: 'items',
         label: 'Items & Inventory',
         description: 'Item master, stock operations, and batch visibility.',

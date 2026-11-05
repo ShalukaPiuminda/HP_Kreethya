@@ -70,6 +70,7 @@ import { ScanInput } from '@/components/scan-input';
 import { StockQtyInput } from '@/components/stock-qty-input';
 import { WarrantyLineBadge } from '@/components/warranty-line-badge';
 import { findItemByScan } from '@/lib/barcode';
+import { nicConfirmMessage, nicError, normalizeNic } from '@/lib/nic';
 import {
   Badge,
   DiscountInput,
@@ -707,13 +708,22 @@ export default function SalesPage() {
 
   const saveQuickCustomer = async (event: React.FormEvent) => {
     event.preventDefault();
-    setCustomerSaving(true);
     setNotice(null);
+
+    const nic = normalizeNic(customerQuickAdd.NIC);
+    const invalidNic = nicError(nic);
+    if (invalidNic) {
+      setNotice({ type: 'error', message: invalidNic });
+      return;
+    }
+    if (!window.confirm(nicConfirmMessage(nic))) return;
+
+    setCustomerSaving(true);
 
     try {
       const response = await api.post<SalesCustomer>('/v1/customers', {
         name: customerQuickAdd.name.trim(),
-        NIC: customerQuickAdd.NIC.trim(),
+        NIC: nic,
         phone: customerQuickAdd.phone.trim() || null,
         address: customerQuickAdd.address.trim() || null,
       });
@@ -1496,6 +1506,11 @@ export default function SalesPage() {
           width="max-w-2xl"
         >
           <form onSubmit={saveQuickCustomer} className="grid gap-4 p-6 sm:grid-cols-2">
+            {notice?.type === 'error' && (
+              <div className="sm:col-span-2">
+                <OperationNotice type="error">{notice.message}</OperationNotice>
+              </div>
+            )}
             <OperationField label="Customer name" required>
               <input
                 value={customerQuickAdd.name}
@@ -1519,9 +1534,8 @@ export default function SalesPage() {
                     NIC: event.target.value,
                   }))
                 }
-                minLength={9}
                 maxLength={15}
-                placeholder="National identity number"
+                placeholder="901234567V or 199012304567"
                 className={inputClass}
                 required
               />

@@ -36,7 +36,11 @@ export interface CrudField<TRecord extends CrudRecord = CrudRecord> {
   type?: 'text' | 'email' | 'tel' | 'mobile' | 'number' | 'textarea' | 'select' | 'image';
   required?: boolean;
   placeholder?: string;
-  help?: string;
+  help?: string | ((editingRecord: TRecord | null, values: Record<string, string>) => string | undefined);
+  /** Read-only when this returns true (text and textarea inputs). */
+  disabled?: (editingRecord: TRecord | null, values: Record<string, string>) => boolean;
+  /** Not shown, and not sent, when this returns true. */
+  hidden?: (editingRecord: TRecord | null, values: Record<string, string>) => boolean;
   min?: number;
   max?: number;
   minLength?: number;
@@ -99,6 +103,21 @@ interface CrudWorkspaceProps<TRecord extends CrudRecord> {
     editingRecord: TRecord | null
   ) => Record<string, unknown>;
   onRecordsChange?: (records: TRecord[]) => void;
+  /** Adjust the built payload (e.g. normalise values) before it is validated and sent. */
+  preparePayload?: (
+    payload: Record<string, unknown>,
+    editingRecord: TRecord | null
+  ) => Record<string, unknown>;
+  /** Return an error message to block saving, or null to continue. */
+  validateSubmit?: (
+    payload: Record<string, unknown>,
+    editingRecord: TRecord | null
+  ) => string | null;
+  /** Return a message the user must confirm before saving, or null to skip. */
+  confirmSubmit?: (
+    payload: Record<string, unknown>,
+    editingRecord: TRecord | null
+  ) => string | null;
 }
 
 export function CrudWorkspace<TRecord extends CrudRecord>({
@@ -119,6 +138,9 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
   transformRecords,
   transformSubmit,
   onRecordsChange,
+  preparePayload,
+  validateSubmit,
+  confirmSubmit,
 }: CrudWorkspaceProps<TRecord>) {
   const { hasPermission } = useAuth();
   const [records, setRecords] = useState<TRecord[]>([]);
@@ -220,6 +242,8 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
     if (transformSubmit) return transformSubmit(values, editingRecord);
 
     return fields.reduce<Record<string, unknown>>((payload, field) => {
+      if (field.hidden?.(editingRecord, values)) return payload;
+
       const rawValue = values[field.name] ?? '';
       // Send exactly what the mobile input shows (digits only, 07XXXXXXXX).
       const value = field.type === 'mobile' ? toLocalMobile(rawValue) : rawValue;
@@ -238,12 +262,23 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setSaving(true);
     setNotice(null);
 
-    try {
-      const payload = buildPayload();
+    const builtPayload = buildPayload();
+    const payload = preparePayload ? preparePayload(builtPayload, editingRecord) : builtPayload;
 
+    const validationError = validateSubmit?.(payload, editingRecord) ?? null;
+    if (validationError) {
+      setNotice({ type: 'error', message: validationError });
+      return;
+    }
+
+    const confirmMessage = confirmSubmit?.(payload, editingRecord) ?? null;
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
+
+    setSaving(true);
+
+    try {
       if (editingRecord) {
         await api.put(`${endpoint}/${editingRecord.id}`, payload);
       } else {
@@ -457,12 +492,24 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
             </div>
 
             <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-5 p-6 sm:grid-cols-2">
+              {notice?.type === 'error' && (
+                <div className="sm:col-span-2">
+                  <OperationNotice type="error" details={notice.details}>
+                    {notice.message}
+                  </OperationNotice>
+                </div>
+              )}
               {fields.map((field) => {
+                if (field.hidden?.(editingRecord, values)) return null;
+
                 const options =
                   typeof field.options === 'function'
                     ? field.options(editingRecord, records)
                     : field.options || [];
                 const fieldClass = field.span === 2 ? 'sm:col-span-2' : '';
+                const disabled = field.disabled?.(editingRecord, values) ?? false;
+                const help = typeof field.help === 'function' ? field.help(editingRecord, values) : field.help;
+                const inputClass = `w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100${disabled ? ' cursor-not-allowed bg-slate-100 text-slate-500' : ''}`;
 
                 return (
                   <label key={field.name} className={fieldClass}>
@@ -492,8 +539,9 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
                         }
                         placeholder={field.placeholder}
                         required={field.required}
+                        disabled={disabled}
                         rows={4}
-                        className="w-full resize-y rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                        className={`resize-y ${inputClass}`}
                       />
                     ) : field.type === 'mobile' ? (
                       <MobileInput
@@ -543,13 +591,14 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
                         pattern={field.pattern}
                         title={field.patternTitle}
                         step={field.step}
-                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                        disabled={disabled}
+                        className={inputClass}
                       />
                     )}
 
-                    {field.help && (
+                    {help && (
                       <span className="mt-1.5 block text-xs leading-5 text-slate-500">
-                        {field.help}
+                        {help}
                       </span>
                     )}
                   </label>

@@ -13,6 +13,8 @@ class Customer extends Model
 
     protected $casts = [
         'advance_balance' => 'decimal:2',
+        // Computed by CustomerController::query(): credit sale or HP agreement exists.
+        'nic_locked' => 'boolean',
     ];
 
     /**
