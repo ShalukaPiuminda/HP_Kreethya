@@ -384,7 +384,6 @@ export function ItemFormModal({
       ...(form.category_id === '' ? ['Select a category.'] : []),
       ...(form.brand_id === '' ? ['Select a brand.'] : []),
       ...(form.make_id === '' ? ['Select a make.'] : []),
-      ...(form.color_id === '' ? ['Select a color.'] : []),
       ...(form.has_warranty && !(Number(form.warranty_period) > 0)
         ? ['Enter the customer warranty period, or turn off warranty.']
         : []),
