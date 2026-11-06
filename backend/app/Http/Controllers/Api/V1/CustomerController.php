@@ -47,6 +47,9 @@ class CustomerController extends GeneratedCodeCrudController
             ],
             'phone' => $this->mobilePhoneRules(),
             'address' => ['nullable', 'string'],
+            'latitude' => ['nullable', 'required_with:longitude', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'required_with:latitude', 'numeric', 'between:-180,180'],
+            'location_note' => ['nullable', 'string', 'max:500'],
             // Only used when changing a locked NIC; never stored on the customer.
             'nic_change_reason' => ['nullable', 'string', 'max:255'],
         ];
@@ -65,6 +68,9 @@ class CustomerController extends GeneratedCodeCrudController
 
     protected function prepareValidatedData(array $validated, ?Model $model = null): array
     {
+        if ($model && (array_key_exists('latitude', $validated) xor array_key_exists('longitude', $validated))) {
+            throw ValidationException::withMessages(['latitude' => 'Send both latitude and longitude together, or clear both.']);
+        }
         unset($validated['nic_change_reason']);
 
         return parent::prepareValidatedData($validated, $model);

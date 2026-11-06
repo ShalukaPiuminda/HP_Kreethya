@@ -33,7 +33,7 @@ export interface CrudField<TRecord extends CrudRecord = CrudRecord> {
   label: string;
   /** 'mobile' = Sri Lankan mobile: digits only, 10 characters, validated while typing. */
   /** 'image' = uploaded picture stored as a resized base64 data URL. */
-  type?: 'text' | 'email' | 'tel' | 'mobile' | 'number' | 'textarea' | 'select' | 'image';
+  type?: 'text' | 'email' | 'tel' | 'mobile' | 'number' | 'textarea' | 'select' | 'image' | 'hidden';
   required?: boolean;
   placeholder?: string;
   help?: string | ((editingRecord: TRecord | null, values: Record<string, string>) => string | undefined);
@@ -119,6 +119,7 @@ interface CrudWorkspaceProps<TRecord extends CrudRecord> {
     editingRecord: TRecord | null
   ) => string | null;
   renderConfirmation?: (payload: Record<string, unknown>, message: string) => React.ReactNode;
+  renderFormExtra?: (values: Record<string, string>, onChange: (values: Record<string, string>) => void) => React.ReactNode;
 }
 
 export function CrudWorkspace<TRecord extends CrudRecord>({
@@ -143,6 +144,7 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
   validateSubmit,
   confirmSubmit,
   renderConfirmation,
+  renderFormExtra,
 }: CrudWorkspaceProps<TRecord>) {
   const { hasPermission } = useAuth();
   const [records, setRecords] = useState<TRecord[]>([]);
@@ -516,6 +518,7 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
                 </div>
               )}
               {fields.map((field) => {
+                if (field.type === 'hidden') return null;
                 if (field.hidden?.(editingRecord, values)) return null;
 
                 const options =
@@ -621,6 +624,7 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
                 );
               })}
 
+              {renderFormExtra && <div className="sm:col-span-2">{renderFormExtra(values, setValues)}</div>}
               <div className="flex justify-end gap-3 border-t border-slate-200 pt-5 sm:col-span-2">
                 <button
                   type="button"

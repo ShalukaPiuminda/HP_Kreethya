@@ -4,6 +4,7 @@ import { BadgeCheck, Lock, UsersRound } from 'lucide-react';
 import { CrudWorkspace, type CrudRecord } from '@/components/crud-workspace';
 import { useAuth } from '@/lib/auth-context';
 import { nicFormHooks, normalizeNic, parseNic } from '@/lib/nic';
+import { CustomerLocationInput } from '@/components/customer-location-input';
 
 interface CustomerRecord extends CrudRecord {
   Code: string;
@@ -11,6 +12,9 @@ interface CustomerRecord extends CrudRecord {
   NIC: string | null;
   phone: string | null;
   address: string | null;
+  latitude: string | null;
+  longitude: string | null;
+  location_note: string | null;
   advance_balance: string;
   /** True once the customer has a credit sale or HP agreement. */
   nic_locked?: boolean;
@@ -35,7 +39,8 @@ export default function CustomersPage() {
       singular="Customer"
       plural="Customers"
       icon={UsersRound}
-      initialValues={{ name: '', NIC: '', nic_change_reason: '', phone: '', address: '' }}
+      initialValues={{ name: '', NIC: '', nic_change_reason: '', phone: '', address: '', latitude: '', longitude: '', location_note: '' }}
+      renderFormExtra={(values, onChange) => <CustomerLocationInput values={values} onChange={onChange} />}
       searchKeys={['Code', 'name', 'NIC', 'phone']}
       preparePayload={nicHooks.preparePayload}
       validateSubmit={(payload, editing) => {
@@ -88,6 +93,9 @@ export default function CustomersPage() {
         );
       }}
       fields={[
+        { name: 'latitude', label: 'Latitude', type: 'hidden', nullable: true },
+        { name: 'longitude', label: 'Longitude', type: 'hidden', nullable: true },
+        { name: 'location_note', label: 'Location note', type: 'hidden', nullable: true },
         {
           name: 'name',
           label: 'Customer name',
@@ -168,6 +176,15 @@ export default function CustomersPage() {
           ),
         },
         { key: 'phone', label: 'Phone' },
+        {
+          key: 'location', label: 'Location',
+          render: (record) => record.latitude != null && record.longitude != null ? (
+            <div className="space-y-1">
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${record.latitude},${record.longitude}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-700 underline">Directions ↗</a>
+              {record.location_note && <p className="max-w-48 break-words text-xs text-slate-500">{record.location_note}</p>}
+            </div>
+          ) : <span className="text-xs text-slate-400">Not added</span>,
+        },
         {
           key: 'advance_balance',
           label: 'Advance Balance',
