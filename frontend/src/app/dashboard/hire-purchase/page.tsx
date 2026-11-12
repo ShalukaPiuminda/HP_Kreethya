@@ -162,6 +162,10 @@ type PersonQuickAddForm = {
   address: string;
 };
 
+// Installments fall on the same day of the month as the agreement date
+// (e.g. Oct 28 -> Nov 28, Dec 28...). The backend clamps 29-31 to short months.
+const dueDayFromDate = (date: string): string => String(Number(date.slice(8, 10)) || 1);
+
 const emptyForm = (): AgreementForm => ({
   invoice_date: today(),
   reference_no: '',
@@ -177,7 +181,7 @@ const emptyForm = (): AgreementForm => ({
   transport: '0',
   discount: '0',
   discount_type: 'amount',
-  instalment_due_date: '1',
+  instalment_due_date: dueDayFromDate(today()),
   cheque_bank_id: '',
   cheque_bank_branch_id: '',
   cheque_no: '',
@@ -870,7 +874,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
             <Field label="Agreement Date" required className="xl:col-span-2">
               <IconSlot icon={CalendarDays}>
-                <input type="date" value={form.invoice_date} onChange={(event) => setForm({ ...form, invoice_date: event.target.value })} className={iconInputClass} required />
+                <input type="date" value={form.invoice_date} onChange={(event) => setForm({ ...form, invoice_date: event.target.value, instalment_due_date: dueDayFromDate(event.target.value) })} className={iconInputClass} required />
               </IconSlot>
             </Field>
             <Field label="Reference" className="xl:col-span-2">
@@ -930,9 +934,9 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
                 <SearchSelect value={form.schema_type} onChange={(value) => setForm({ ...form, schema_type: value })} options={options.schemas.map((schema) => ({ value: schema.SchemaType, label: schema.SchemaType, description: `${schema.NoOfInstallment} months` }))} placeholder="Select scheme" searchPlaceholder="Search schemes..." className={iconInputClass} required />
               </IconSlot>
             </Field>
-            <Field label="Installment Due Day" required hint="1 – 28" className="xl:col-span-2">
+            <Field label="Installment Due Day" required hint="Same day as agreement date" className="xl:col-span-2">
               <IconSlot icon={CalendarClock}>
-                <input type="number" min="1" max="28" value={form.instalment_due_date} onChange={(event) => setForm({ ...form, instalment_due_date: event.target.value })} className={`${iconInputClass} tabular-nums`} required />
+                <input type="number" min="1" max="31" value={form.instalment_due_date} onChange={(event) => setForm({ ...form, instalment_due_date: event.target.value })} className={`${iconInputClass} tabular-nums`} required />
               </IconSlot>
             </Field>
           </div>

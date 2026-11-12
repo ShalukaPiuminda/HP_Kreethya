@@ -534,7 +534,7 @@ class HPController extends BaseController
             'transport' => ['nullable', 'numeric', 'min:0'],
             'discount' => ['nullable', 'numeric', 'min:0'],
             'discount_type' => ['nullable', Rule::in(['amount', 'percent'])],
-            'instalment_due_date' => ['required', 'integer', 'between:1,28'],
+            'instalment_due_date' => ['required', 'integer', 'between:1,31'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.item_code' => ['required', 'string', Rule::exists('items', 'item_code')->where('BC', $branchCode)],
             'items.*.qty' => ['required', 'integer', 'min:1'],
