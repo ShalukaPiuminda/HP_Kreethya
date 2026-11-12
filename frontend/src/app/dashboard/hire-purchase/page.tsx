@@ -1194,6 +1194,9 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
                   <SummaryRow label="Interest" value={money(calculation.interest_amount)} />
                   <SummaryRow label="Document charge" value={money(calculation.document_charge)} />
                   <SummaryRow label="Transport" value={money(calculation.transport)} />
+                  {Number(calculation.rounding_adjustment || 0) > 0 && (
+                    <SummaryRow label="Installment round-up" value={`+ ${money(calculation.rounding_adjustment)}`} tone="rose" />
+                  )}
                   <SummaryRow label="Contract total" value={money(calculation.contract_amount)} />
                 </div>
                 <div className="flex items-center justify-between border-t border-indigo-200 bg-indigo-50 px-5 py-4">

@@ -53,15 +53,21 @@ class HPService
         $interestAmount = round($principal * ((float) $schema->InstallmentRate / 100), 2);
         $documentCharge = round($principal * ((float) $schema->DocumentCharagePrecentage / 100), 2);
         $transport = round((float) ($data['transport'] ?? 0), 2);
-        $grossHpAmount = round($principal + $interestAmount + $documentCharge + $transport, 2);
+        $rawGrossHpAmount = round($principal + $interestAmount + $documentCharge + $transport, 2);
+        $installmentCount = max(1, (int) $schema->NoOfInstallment);
+        // Installments are always whole numbers: round the monthly amount up and
+        // let the HP total grow by the difference (shown as the round-up adjustment).
+        $installmentMonthly = (float) ceil(round($rawGrossHpAmount / $installmentCount, 2));
+        $grossHpAmount = round($installmentMonthly * $installmentCount, 2);
+        $roundingAdjustment = round($grossHpAmount - $rawGrossHpAmount, 2);
         $contractAmount = round($downPayment + $grossHpAmount, 2);
-        $installmentMonthly = round($grossHpAmount / max(1, (int) $schema->NoOfInstallment), 2);
 
         return [
             'principal' => $principal,
             'interest_amount' => $interestAmount,
             'document_charge' => $documentCharge,
             'transport' => $transport,
+            'rounding_adjustment' => $roundingAdjustment,
             'gross_hp_amount' => $grossHpAmount,
             'contract_amount' => $contractAmount,
             'installment_monthly' => $installmentMonthly,
@@ -164,7 +170,7 @@ class HPService
                 'down_payment_outstanding' => 0,
                 'transport' => $calc['transport'],
                 'instalment_rate' => $schema->InstallmentRate,
-                'instalment_amount' => $calc['interest_amount'],
+                'instalment_amount' => round($calc['interest_amount'] + $calc['rounding_adjustment'], 2),
                 'no_of_instalment' => $schema->NoOfInstallment,
                 'instalment_due_date' => $data['instalment_due_date'] ?? 1,
                 'instalment' => $calc['installment_monthly'],
@@ -1139,7 +1145,7 @@ class HPService
         $lines = [
             ['account' => AccountingService::HP_RECEIVABLE, 'debit' => $calc['contract_amount']],
             ['account' => AccountingService::SALES_INCOME, 'credit' => $agreement->net_amount],
-            ['account' => AccountingService::HP_INTEREST_INCOME, 'credit' => $calc['interest_amount']],
+            ['account' => AccountingService::HP_INTEREST_INCOME, 'credit' => round($calc['interest_amount'] + ($calc['rounding_adjustment'] ?? 0), 2)],
             ['account' => AccountingService::DOCUMENT_CHARGE_INCOME, 'credit' => $calc['document_charge']],
             ['account' => AccountingService::TRANSPORT_INCOME, 'credit' => $calc['transport']],
         ];

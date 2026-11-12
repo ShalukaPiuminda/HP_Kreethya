@@ -116,6 +116,40 @@ class HirePurchaseWorkflowTest extends TestCase
         Sanctum::actingAs($this->user);
     }
 
+    public function test_installments_are_rounded_up_to_whole_numbers(): void
+    {
+        // Raw HP amount = 80000 + 8000 interest + 1600 doc + 1001 transport = 90601
+        // 90601 / 4 = 22650.25 -> rounded up to 22651, HP total 90604 (round-up 3.00)
+        $agreement = $this->postJson('/api/v1/hp', [
+            'invoice_date' => '2026-01-01',
+            'customer_code' => $this->customer->Code,
+            'guarantor_1_code' => $this->guarantor->Code,
+            'schema_type' => 'HP-4',
+            'store_id' => $this->store->id,
+            'down_payment' => 20000,
+            'down_payment_method' => 'cash',
+            'transport' => 1001,
+            'instalment_due_date' => 1,
+            'items' => [
+                ['item_code' => $this->item->item_code, 'qty' => 1],
+            ],
+        ])->assertCreated()
+            ->assertJsonPath('data.instalment', '22651.00')
+            ->assertJsonPath('data.instalment_amount', '8003.00')
+            ->assertJsonPath('data.due_amount', '90604.00')
+            ->assertJsonPath('data.contract_amount', '110604.00')
+            ->assertJsonCount(4, 'data.instalments');
+
+        foreach ($agreement->json('data.instalments') as $instalment) {
+            $this->assertSame(22651.0, (float) $instalment['base_amount']);
+        }
+
+        $this->assertSame(
+            (float) \DB::table('t_account_trans')->sum('dr_amount'),
+            (float) \DB::table('t_account_trans')->sum('cr_amount')
+        );
+    }
+
     public function test_agreement_uses_net_less_downpayment_and_supports_installment_and_conversion(): void
     {
         $agreement = $this->postJson('/api/v1/hp', [

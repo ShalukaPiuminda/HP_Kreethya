@@ -191,6 +191,7 @@ export interface HpCalculation {
   interest_amount: number;
   document_charge: number;
   transport: number;
+  rounding_adjustment: number;
   gross_hp_amount: number;
   contract_amount: number;
   installment_monthly: number;
