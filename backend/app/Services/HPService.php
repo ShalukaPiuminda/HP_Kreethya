@@ -981,6 +981,10 @@ class HPService
                 ->whereIn('status', ['pending', 'partial'])
                 ->whereDate('instalment_date', '<', today())
                 ->count(),
+            'overdue_amount' => round((float) (clone $installments)
+                ->whereIn('status', ['pending', 'partial'])
+                ->whereDate('instalment_date', '<', today())
+                ->sum('balance_amount'), 2),
             'due_today' => (clone $installments)
                 ->whereIn('status', ['pending', 'partial'])
                 ->whereDate('instalment_date', today())

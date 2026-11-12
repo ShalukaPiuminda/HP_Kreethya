@@ -289,6 +289,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('role.permission:reports');
     Route::get('/v1/reports/day-end-preview', [App\Http\Controllers\Api\V1\ReportingController::class, 'dayEndPreview'])
         ->middleware('role.permission:reports');
+    Route::get('/v1/hp-api/dashboard-charts', [App\Http\Controllers\Api\HpApi\DashboardChartsController::class, 'index'])
+        ->middleware('role.permission:reports');
     Route::post('/v1/reports/day-end-close', [App\Http\Controllers\Api\V1\ReportingController::class, 'closeDay'])
         ->middleware('role.permission:reports,can_create');
     Route::get('/v1/reports/custom', [App\Http\Controllers\Api\V1\CustomReportController::class, 'published'])

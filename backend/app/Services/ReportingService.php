@@ -113,6 +113,7 @@ class ReportingService
             'purchases' => round($purchases, 2),
             'expenses' => round($expenses, 2),
             'customer_collections' => round($customerCollections + $hpCollections + $serviceCollections, 2),
+            'hp_collections' => round($hpCollections, 2),
             'supplier_payments' => round($supplierPayments, 2),
             'net_cash_flow' => round(
                 $customerCollections + $hpCollections + $serviceCollections - $supplierPayments - $expenses,
@@ -131,6 +132,113 @@ class ReportingService
             'daily_sales' => $dailySales,
             'daily_collections' => $dailyCollections,
             'trial_balance_difference' => $trialBalance['difference'],
+        ];
+    }
+
+    /**
+     * Day-bucketed series for the admin app's Dashboard chart carousel —
+     * one call returns everything (sales, purchases, collections, HP
+     * installment collections, net cash flow, overdue) for a given range,
+     * so the mobile client isn't firing off several requests per swipe.
+     *
+     * Most series are sparse (only days with activity are present) to match
+     * the existing `overview()` convention — the caller is expected to
+     * zero-fill gaps when bucketing for a chart, same as it already does
+     * with mock data. `daily_overdue` is the one exception: it's a running
+     * balance-as-of-that-day snapshot, not a daily sum, so it's naturally
+     * dense (one entry per day in range).
+     */
+    public function dashboardCharts(User $user, string $from, string $to): array
+    {
+        $dailySales = DB::table('t_invoice_sums')
+            ->selectRaw('Invoice_date as report_date, SUM(Net_Amount) as total, COUNT(*) as record_count')
+            ->where('BC', $user->BC)
+            ->whereBetween('Invoice_date', [$from, $to])
+            ->groupBy('Invoice_date')
+            ->orderBy('Invoice_date')
+            ->get()
+            ->map(fn ($row) => ['date' => $row->report_date, 'total' => round((float) $row->total, 2), 'count' => (int) $row->record_count])
+            ->values();
+
+        $dailyPurchases = DB::table('t_purchases_sums')
+            ->selectRaw('Invoice_date as report_date, SUM(Net_Amount) as total, COUNT(*) as record_count')
+            ->where('BC', $user->BC)
+            ->whereBetween('Invoice_date', [$from, $to])
+            ->groupBy('Invoice_date')
+            ->orderBy('Invoice_date')
+            ->get()
+            ->map(fn ($row) => ['date' => $row->report_date, 'total' => round((float) $row->total, 2), 'count' => (int) $row->record_count])
+            ->values();
+
+        $dailyHpCollections = $this->dailyTotals('t_hp_installment_payments', 'payment_date', 'total_amount', $user->BC, $from, $to)
+            ->groupBy('date')
+            ->map(fn ($rows, $date) => ['date' => $date, 'total' => round((float) $rows->sum('total'), 2), 'count' => (int) $rows->sum('count')])
+            ->sortBy('date')
+            ->values();
+
+        $dailyCollections = collect()
+            ->merge($this->dailyTotals('t_customer_payments', 'Payment_date', 'Payment_Amount', $user->BC, $from, $to))
+            ->merge($this->dailyTotals('t_hp_installment_payments', 'payment_date', 'total_amount', $user->BC, $from, $to))
+            ->merge($this->dailyTotals('t_service_customer_payments', 'payment_date', 'amount', $user->BC, $from, $to))
+            ->groupBy('date')
+            ->map(fn ($rows, $date) => ['date' => $date, 'total' => round((float) $rows->sum('total'), 2), 'count' => (int) $rows->sum('count')])
+            ->sortBy('date')
+            ->values();
+
+        $dailySupplierPayments = $this->dailyTotals('t_supplier_payments', 'Payment_date', 'Payment_Amount', $user->BC, $from, $to);
+        $dailyExpenses = DB::table('t_expenses')
+            ->selectRaw('Expense_date as report_date, SUM(Expense_Amount) as total')
+            ->where('BC', $user->BC)
+            ->where('status', 'posted')
+            ->whereBetween('Expense_date', [$from, $to])
+            ->groupBy('Expense_date')
+            ->get()
+            ->map(fn ($row) => ['date' => $row->report_date, 'total' => (float) $row->total]);
+
+        $netByDate = [];
+        foreach ($dailyCollections as $row) {
+            $netByDate[$row['date']]['in'] = ($netByDate[$row['date']]['in'] ?? 0) + $row['total'];
+        }
+        foreach ($dailySupplierPayments as $row) {
+            $netByDate[$row['date']]['out'] = ($netByDate[$row['date']]['out'] ?? 0) + $row['total'];
+        }
+        foreach ($dailyExpenses as $row) {
+            $netByDate[$row['date']]['out'] = ($netByDate[$row['date']]['out'] ?? 0) + $row['total'];
+        }
+        ksort($netByDate);
+        $dailyNetCashFlow = collect($netByDate)
+            ->map(fn ($totals, $date) => [
+                'date' => $date,
+                'total' => round(($totals['in'] ?? 0) - ($totals['out'] ?? 0), 2),
+            ])
+            ->values();
+
+        $overdueInstalments = DB::table('t_instalments')
+            ->select('instalment_date', 'balance_amount')
+            ->where('BC', $user->BC)
+            ->whereIn('status', ['pending', 'partial'])
+            ->where('instalment_date', '<', $to)
+            ->get();
+        $dailyOverdue = collect(\Carbon\CarbonPeriod::create($from, $to))
+            ->map(function ($day) use ($overdueInstalments) {
+                $date = $day->format('Y-m-d');
+                $asOfDay = $overdueInstalments->filter(fn ($row) => $row->instalment_date < $date);
+                return [
+                    'date' => $date,
+                    'total' => round($asOfDay->sum(fn ($row) => (float) $row->balance_amount), 2),
+                    'count' => $asOfDay->count(),
+                ];
+            })
+            ->values();
+
+        return [
+            'period' => compact('from', 'to'),
+            'daily_sales' => $dailySales,
+            'daily_purchases' => $dailyPurchases,
+            'daily_collections' => $dailyCollections,
+            'daily_hp_collections' => $dailyHpCollections,
+            'daily_net_cash_flow' => $dailyNetCashFlow,
+            'daily_overdue' => $dailyOverdue,
         ];
     }
 
@@ -1020,12 +1128,12 @@ class ReportingService
         string $to
     ): Collection {
         return DB::table($table)
-            ->selectRaw("{$dateColumn} as report_date, SUM({$amountColumn}) as total")
+            ->selectRaw("{$dateColumn} as report_date, SUM({$amountColumn}) as total, COUNT(*) as record_count")
             ->where('BC', $branch)
             ->whereBetween($dateColumn, [$from, $to])
             ->groupBy($dateColumn)
             ->get()
-            ->map(fn ($row) => ['date' => $row->report_date, 'total' => (float) $row->total]);
+            ->map(fn ($row) => ['date' => $row->report_date, 'total' => (float) $row->total, 'count' => (int) $row->record_count]);
     }
 
     private function movementLabel(string $transCode): string
