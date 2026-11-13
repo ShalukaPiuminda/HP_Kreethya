@@ -629,8 +629,8 @@ function OpeningAgreementModal({ options, onClose, onCreated }: { options: HpOpt
               <div key={index} className="grid gap-3 rounded-xl bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-12">
                 <OperationField label="Item" required className="xl:col-span-4"><SearchSelect value={line.item_code} onChange={(value) => { const item = options.items.find((candidate) => candidate.item_code === value); const unitPrice = String(item?.standard_sales_price || ''); updateLine(index, { item_code: value, unit_price: unitPrice, net_value: String(Number(unitPrice || 0) * Number(line.qty || 1)) }); }} options={options.items.map((item) => ({ value: item.item_code, label: `${item.item_code} - ${item.item_description}` }))} placeholder="Select item" searchPlaceholder="Search by code or description..." className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
                 <OperationField label="Qty" required className="xl:col-span-2"><input type="number" min="1" value={line.qty} onChange={(event) => updateLine(index, { qty: event.target.value, net_value: String(Number(line.unit_price || 0) * Number(event.target.value || 0)) })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
-                <OperationField label="Unit price" required className="xl:col-span-2"><input type="number" min="0.01" value={line.unit_price} onChange={(event) => updateLine(index, { unit_price: event.target.value, net_value: String(Number(event.target.value || 0) * Number(line.qty || 0)) })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
-                <OperationField label="Line value" required className="xl:col-span-2"><input type="number" min="0.01" value={line.net_value} onChange={(event) => updateLine(index, { net_value: event.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
+                <OperationField label="Unit price" required className="xl:col-span-2"><input type="number" step="0.01" min="0.01" value={line.unit_price} onChange={(event) => updateLine(index, { unit_price: event.target.value, net_value: String(Number(event.target.value || 0) * Number(line.qty || 0)) })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
+                <OperationField label="Line value" required className="xl:col-span-2"><input type="number" step="0.01" min="0.01" value={line.net_value} onChange={(event) => updateLine(index, { net_value: event.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
                 <OperationField label="Serials / batch" className="xl:col-span-2"><input value={line.serial_numbers} onChange={(event) => updateLine(index, { serial_numbers: event.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" placeholder="Serials separated by comma" /></OperationField>
                 {lines.length > 1 && <button type="button" onClick={() => setLines(lines.filter((_, lineIndex) => lineIndex !== index))} className="justify-self-start rounded-xl p-2.5 text-rose-600 hover:bg-rose-50 xl:col-span-12"><Trash2 className="h-4 w-4" /></button>}
               </div>
@@ -645,9 +645,9 @@ function OpeningAgreementModal({ options, onClose, onCreated }: { options: HpOpt
               <div key={index} className="grid gap-3 rounded-xl bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-12">
                 <OperationField label="No." required className="xl:col-span-1"><input type="number" min="1" value={row.instalment_no} onChange={(event) => updateInstallment(index, { instalment_no: event.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
                 <OperationField label="Due date" required className="xl:col-span-3"><input type="date" value={row.instalment_date} onChange={(event) => updateInstallment(index, { instalment_date: event.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
-                <OperationField label="Installment amount" required className="xl:col-span-3"><input type="number" min="0.01" value={row.base_amount} onChange={(event) => updateInstallmentAmount(index, 'base_amount', event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
-                <OperationField label="Already paid" className="xl:col-span-2"><input type="number" min="0" value={row.amount_pay} onChange={(event) => updateInstallmentAmount(index, 'amount_pay', event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
-                <OperationField label="Balance" required className="xl:col-span-2"><input type="number" min="0" value={row.balance_amount} onChange={(event) => updateInstallmentAmount(index, 'balance_amount', event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
+                <OperationField label="Installment amount" required className="xl:col-span-3"><input type="number" step="0.01" min="0.01" value={row.base_amount} onChange={(event) => updateInstallmentAmount(index, 'base_amount', event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
+                <OperationField label="Already paid" className="xl:col-span-2"><input type="number" step="0.01" min="0" value={row.amount_pay} onChange={(event) => updateInstallmentAmount(index, 'amount_pay', event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
+                <OperationField label="Balance" required className="xl:col-span-2"><input type="number" step="0.01" min="0" value={row.balance_amount} onChange={(event) => updateInstallmentAmount(index, 'balance_amount', event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
                 {installments.length > 1 && <button type="button" onClick={() => setInstallments(installments.filter((_, rowIndex) => rowIndex !== index).map((current, rowIndex) => ({ ...current, instalment_no: String(rowIndex + 1) })))} className="self-end rounded-xl p-2.5 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" /></button>}
               </div>
             ))}
@@ -1442,6 +1442,18 @@ function AgreementActionModal({ agreement, action, options, onClose, onSaved }: 
   const [date, setDate] = useState(today());
   const [discount, setDiscount] = useState('0');
   const [amount, setAmount] = useState(String(agreement.outstanding_amount));
+  const outstanding = Number(agreement.outstanding_amount || 0);
+  const financedTotal = Number(agreement.due_amount || 0);
+  // Interest is spread evenly across the installments, so the unpaid share of the
+  // total interest matches the unpaid share of the financed amount.
+  const remainingInterest = financedTotal > 0
+    ? Math.min(outstanding, Math.round(outstanding * (Number(agreement.instalment_amount || 0) / financedTotal) * 100) / 100)
+    : 0;
+  const balanceWithoutInterest = Math.round((outstanding - remainingInterest) * 100) / 100;
+  const applyDiscount = (nextDiscount: string) => {
+    setDiscount(nextDiscount);
+    setAmount(String(Math.max(0, Math.round((outstanding - Number(nextDiscount || 0)) * 100) / 100)));
+  };
   const [method, setMethod] = useState('cash');
   const [bankId, setBankId] = useState('');
   const [storeId, setStoreId] = useState(String(agreement.store_id));
@@ -1502,12 +1514,34 @@ function AgreementActionModal({ agreement, action, options, onClose, onSaved }: 
         <OperationField label={action === 'convert' ? 'Payment date' : 'Return date'} required><input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" /></OperationField>
         {action === 'convert' ? <>
           <OperationField label="Outstanding balance"><input disabled value={money(agreement.outstanding_amount)} className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5" /></OperationField>
-          <OperationField label="Settlement discount"><input type="number" min="0" value={discount} onChange={(event) => { const nextDiscount = event.target.value; setDiscount(nextDiscount); setAmount(String(Math.max(0, Number(agreement.outstanding_amount) - Number(nextDiscount || 0)))); }} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" /></OperationField>
-          <OperationField label="Settlement amount" required><input type="number" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" /></OperationField>
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="font-medium text-slate-700">Remaining interest</span>
+              <span className="font-bold tabular-nums text-indigo-900">{money(remainingInterest)}</span>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-slate-500">
+              <span>Balance without interest</span>
+              <span className="tabular-nums">{money(balanceWithoutInterest)}</span>
+            </div>
+            {agreement.is_opening ? (
+              <p className="mt-2 text-xs text-slate-500">Opening agreements have no recorded interest.</p>
+            ) : remainingInterest > 0 && (
+              <button
+                type="button"
+                onClick={() => applyDiscount(String(remainingInterest))}
+                className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+              >
+                <Percent className="h-3.5 w-3.5" />
+                Give remaining interest as discount
+              </button>
+            )}
+          </div>
+          <OperationField label="Settlement discount"><input type="number" step="0.01" min="0" value={discount} onChange={(event) => applyDiscount(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" /></OperationField>
+          <OperationField label="Settlement amount" required><input type="number" step="0.01" min="0" value={amount} onChange={(event) => setAmount(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" /></OperationField>
         </> : <>
           <OperationField label="Return store" required><SearchSelect value={storeId} onChange={setStoreId} options={options.stores.map((store) => ({ value: String(store.id), label: store.name }))} placeholder="Select store" searchPlaceholder="Search stores..." className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>
           <OperationField label="Return reason" required><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" /></OperationField>
-          <OperationField label="Customer refund"><input type="number" min="0" value={refund} onChange={(event) => setRefund(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" /></OperationField>
+          <OperationField label="Customer refund"><input type="number" step="0.01" min="0" value={refund} onChange={(event) => setRefund(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" /></OperationField>
         </>}
         <OperationField label="Payment method" required><select value={method} onChange={(event) => setMethod(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5"><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option>{action === 'convert' && <option value="cheque">Cheque</option>}</select></OperationField>
         {['card', 'bank_transfer'].includes(method) && <OperationField label="Bank account" required><SearchSelect value={bankId} onChange={setBankId} options={options.bank_accounts.map((bank) => ({ value: String(bank.id), label: bank.bank_name, description: bank.account_no }))} placeholder="Select account" searchPlaceholder="Search bank accounts..." className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5" /></OperationField>}
