@@ -84,7 +84,7 @@ class ServiceWorkflowTest extends TestCase
             'item_serial_no' => 'SER-SRV-001',
             'problem_description' => 'No picture after power on.',
             'intake_condition' => 'Minor scratches on rear panel.',
-            'is_warranty' => true,
+            'is_warranty' => false,
             'expected_completion_date' => '2026-06-25',
         ])->assertCreated()
             ->assertJsonPath('data.status', 'received');

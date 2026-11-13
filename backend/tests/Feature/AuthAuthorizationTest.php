@@ -58,7 +58,7 @@ class AuthAuthorizationTest extends TestCase
             'email' => 'missing@erp.com',
             'password' => 'wrong-password',
         ])->assertUnprocessable()
-            ->assertJsonValidationErrors('email');
+            ->assertJsonValidationErrors('login');
     }
 
     public function test_role_permissions_are_not_tied_to_the_permission_audit_branch(): void

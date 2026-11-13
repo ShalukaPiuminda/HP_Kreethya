@@ -56,7 +56,7 @@ export default function ItemsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [makes, setMakes] = useState<Make[]>([]);
-  const [colors, setColors] = useState<Color[]>([]);
+  const [, setColors] = useState<Color[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [search, setSearch] = useState('');

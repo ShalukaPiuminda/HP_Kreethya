@@ -6,7 +6,6 @@ import { CalendarCheck2, ChartNoAxesCombined, Eye, Filter, PackageSearch } from 
 import { ReportTable, type ReportColumn } from '@/components/report-table';
 import { ReportBreadcrumb } from '@/components/report-breadcrumb';
 import {
-  LoadingTableRow,
   OperationActions,
   OperationField,
   OperationHeader,
@@ -21,6 +20,7 @@ import { financeDate, financeMoney } from '@/lib/finance';
 import type {
   BinCardReport,
   CashFlowReport,
+  CashFlowRow,
   DayEndPreview,
   DayEndRecord,
   HirePurchaseDetailRow,
@@ -215,7 +215,11 @@ function BuiltInReportView({ initialFrom, initialTo }: { initialFrom: string; in
   }, [filters, tab]);
 
   useEffect(() => {
-    void loadOptions();
+    const timer = window.setTimeout(() => {
+      void loadOptions();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [loadOptions]);
 
   useEffect(() => {
@@ -1117,9 +1121,9 @@ function CashFlowView({ report }: { report: CashFlowReport | null }) {
         exportName={`cash-flow-${report.account.code}`}
         initialSortKey="date"
         columns={[
-          textColumn('date', 'Date', (row) => row.date),
-          textColumn('trance_type', 'Type', (row) => `${row.trance_type} · ${row.trance_no}`),
-          textColumn('reference_no', 'Reference', (row) => row.reference_no),
+          textColumn<CashFlowRow>('date', 'Date', (row) => row.date),
+          textColumn<CashFlowRow>('trance_type', 'Type', (row) => `${row.trance_type} · ${row.trance_no}`),
+          textColumn<CashFlowRow>('reference_no', 'Reference', (row) => row.reference_no),
           moneyColumn('cash_in', 'Cash In'),
           moneyColumn('cash_out', 'Cash Out'),
           moneyColumn('running_balance', 'Running Balance'),
@@ -1131,7 +1135,7 @@ function CashFlowView({ report }: { report: CashFlowReport | null }) {
             exportValue: (row) => row.counterpart_accounts.join(' | '),
             render: (row) => (row.counterpart_accounts.length ? <CellList items={row.counterpart_accounts} /> : <span className="text-slate-400">—</span>),
           },
-          textColumn('uid', 'User', (row) => row.uid),
+          textColumn<CashFlowRow>('uid', 'User', (row) => row.uid),
         ]}
       />
     </div>
@@ -1333,7 +1337,7 @@ function moneyColumn<T>(key: keyof T & string, label: string): ReportColumn<T> {
   };
 }
 
-function numberColumn<T = any>(key: string, label: string, accessor: (row: T) => number): ReportColumn<T> {
+function numberColumn<T = unknown>(key: string, label: string, accessor: (row: T) => number): ReportColumn<T> {
   return {
     key,
     label,
@@ -1345,7 +1349,7 @@ function numberColumn<T = any>(key: string, label: string, accessor: (row: T) =>
   };
 }
 
-function textColumn<T = any>(key: string, label: string, accessor: (row: T) => string): ReportColumn<T> {
+function textColumn<T = unknown>(key: string, label: string, accessor: (row: T) => string): ReportColumn<T> {
   return {
     key,
     label,
