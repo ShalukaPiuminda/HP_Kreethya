@@ -39,6 +39,7 @@ class HPService
     public function calculate(array $data, string $branchCode): array
     {
         $schema = MSchema::query()
+            ->with('documentChargeRanges')
             ->where('SchemaType', $data['schema_type'])
             ->where('BC', $branchCode)
             ->firstOrFail();
@@ -56,7 +57,38 @@ class HPService
 
         $principal = round($netAmount - $downPayment, 2);
         $interestAmount = round($principal * ((float) $schema->InstallmentRate / 100), 2);
-        $documentCharge = round($principal * ((float) $schema->DocumentCharagePrecentage / 100), 2);
+
+        $docChargeType = $schema->DocumentChargeType ?? 'percentage';
+        $appliedRate = 0.0;
+        $documentCharge = 0.0;
+
+        if ($docChargeType === 'fixed') {
+            $documentCharge = round((float) ($schema->DocumentChargeAmount ?? 0), 2);
+        } elseif ($docChargeType === 'range') {
+            $ranges = $schema->relationLoaded('documentChargeRanges')
+                ? $schema->documentChargeRanges
+                : $schema->documentChargeRanges()->get();
+
+            $matchedRange = $ranges->first(function ($range) use ($netAmount) {
+                return $netAmount >= (float) $range->from_amount && $netAmount <= (float) $range->to_amount;
+            });
+
+            if (! $matchedRange) {
+                throw ValidationException::withMessages([
+                    'schema_type' => "No document charge range configured for item amount LKR {$netAmount} under scheme {$schema->SchemaType}.",
+                ]);
+            }
+
+            if ($matchedRange->charge_type === 'percentage') {
+                $appliedRate = (float) $matchedRange->charge_value;
+                $documentCharge = round($principal * ($appliedRate / 100), 2);
+            } else {
+                $documentCharge = round((float) $matchedRange->charge_value, 2);
+            }
+        } else {
+            $appliedRate = (float) $schema->DocumentCharagePrecentage;
+            $documentCharge = round($principal * ($appliedRate / 100), 2);
+        }
         // When the scheme keeps the document charge out of capital it is collected upfront.
         $financedDocumentCharge = $documentChargeInCapital ? $documentCharge : 0.0;
         $upfrontDocumentCharge = $documentChargeInCapital ? 0.0 : $documentCharge;
@@ -75,6 +107,8 @@ class HPService
             'down_payment' => $downPayment,
             'interest_amount' => $interestAmount,
             'document_charge' => $documentCharge,
+            'document_charge_type' => $docChargeType,
+            'document_charge_rate' => $appliedRate,
             'upfront_document_charge' => $upfrontDocumentCharge,
             'document_charge_in_capital' => $documentChargeInCapital,
             'down_payment_required' => $downPaymentRequired,
@@ -205,7 +239,8 @@ class HPService
                 'guarantor_2_code' => $data['guarantor_2_code'] ?? null,
                 'schema_type' => $schema->SchemaType,
                 'store_id' => $store->id,
-                'document_charge_rate' => $schema->DocumentCharagePrecentage,
+                'document_charge_type' => $calc['document_charge_type'] ?? 'percentage',
+                'document_charge_rate' => $calc['document_charge_rate'] ?? 0,
                 'document_charge' => $calc['document_charge'],
                 'down_payment_rate' => $schema->DownpaymentPrecentage,
                 'down_payment' => $downPayment,
@@ -479,6 +514,7 @@ class HPService
                 'guarantor_2_code' => $data['guarantor_2_code'] ?? null,
                 'schema_type' => $schema->SchemaType,
                 'store_id' => $store->id,
+                'document_charge_type' => 'percentage',
                 'document_charge_rate' => 0,
                 'document_charge' => 0,
                 'down_payment_rate' => 0,
@@ -1106,7 +1142,7 @@ class HPService
         return [
             'customers' => Customer::query()->where('BC', $user->BC)->orderBy('name')->get(),
             'guarantors' => MGuarantor::query()->where('BC', $user->BC)->orderBy('name')->get(),
-            'schemas' => MSchema::query()->where('BC', $user->BC)->orderBy('SchemaType')->get(),
+            'schemas' => MSchema::query()->with('documentChargeRanges')->where('BC', $user->BC)->orderBy('SchemaType')->get(),
             'stores' => Store::query()->where('BC', $user->BC)->orderBy('name')->get(),
             'items' => $this->stockService->getInventorySnapshot($user->BC),
             'bank_accounts' => BankDetail::query()->where('BC', $user->BC)->orderBy('bank_name')->get(),

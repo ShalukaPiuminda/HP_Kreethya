@@ -125,6 +125,14 @@ interface CrudWorkspaceProps<TRecord extends CrudRecord> {
   ) => string | null;
   renderConfirmation?: (payload: Record<string, unknown>, message: string) => React.ReactNode;
   renderFormExtra?: (values: Record<string, string>, onChange: (values: Record<string, string>) => void) => React.ReactNode;
+  formWidth?: string;
+  renderCustomForm?: (props: {
+    values: Record<string, string>;
+    setValues: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+    editingRecord: TRecord | null;
+    saving: boolean;
+    onCancel: () => void;
+  }) => React.ReactNode;
 }
 
 export function CrudWorkspace<TRecord extends CrudRecord>({
@@ -150,6 +158,8 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
   confirmSubmit,
   renderConfirmation,
   renderFormExtra,
+  formWidth = 'max-w-2xl',
+  renderCustomForm,
 }: CrudWorkspaceProps<TRecord>) {
   const { hasPermission } = useAuth();
   const [records, setRecords] = useState<TRecord[]>([]);
@@ -502,7 +512,7 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
         >
-          <div ref={formPanelRef} role="dialog" aria-modal="true" className="content-scrollbar max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
+          <div ref={formPanelRef} role="dialog" aria-modal="true" className={`content-scrollbar max-h-[92vh] w-full ${formWidth} overflow-y-auto rounded-3xl bg-white shadow-2xl`}>
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/95 px-6 py-5 backdrop-blur">
               <div>
                 <h2 className="text-lg font-bold text-slate-950">
@@ -522,15 +532,25 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-5 p-6 sm:grid-cols-2">
+            <form onSubmit={handleSubmit} className={renderCustomForm ? 'p-6' : 'grid grid-cols-1 gap-5 p-6 sm:grid-cols-2'}>
               {notice?.type === 'error' && (
-                <div className="sm:col-span-2">
+                <div className={renderCustomForm ? 'mb-5' : 'sm:col-span-2'}>
                   <OperationNotice type="error" details={notice.details}>
                     {notice.message}
                   </OperationNotice>
                 </div>
               )}
-              {fields.map((field) => {
+              {renderCustomForm ? (
+                renderCustomForm({
+                  values,
+                  setValues,
+                  editingRecord,
+                  saving,
+                  onCancel: () => setShowForm(false),
+                })
+              ) : (
+                <>
+                  {fields.map((field) => {
                 if (field.type === 'hidden') return null;
                 if (field.hidden?.(editingRecord, values)) return null;
 
@@ -684,7 +704,9 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
                   {editingRecord ? 'Save changes' : `Create ${singular.toLowerCase()}`}
                 </button>
               </div>
-            </form>
+            </>
+          )}
+        </form>
           </div>
         </div>
       )}

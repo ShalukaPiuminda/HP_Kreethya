@@ -1006,7 +1006,15 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
               <Badge icon={CalendarClock} tone="indigo">{selectedSchema.NoOfInstallment} installments</Badge>
               <Badge icon={Percent}>Rate {Number(selectedSchema.InstallmentRate)}%</Badge>
               <Badge icon={Banknote}>{dpRequired ? `Down payment ${Number(selectedSchema.DownpaymentPrecentage)}%` : 'No down payment'}</Badge>
-              <Badge icon={FileText}>Document charge {Number(selectedSchema.DocumentCharagePrecentage)}%{docInCapital ? '' : ' · upfront'}</Badge>
+              <Badge icon={FileText}>
+                Document charge{' '}
+                {selectedSchema.DocumentChargeType === 'fixed'
+                  ? `LKR ${Number(selectedSchema.DocumentChargeAmount || 0).toLocaleString()}`
+                  : selectedSchema.DocumentChargeType === 'range'
+                  ? 'Tiered range'
+                  : `${Number(selectedSchema.DocumentCharagePrecentage)}%`}
+                {docInCapital ? '' : ' · upfront'}
+              </Badge>
               {collectFirst && <Badge icon={CalendarClock} tone="indigo">1st installment at sale</Badge>}
               <Badge icon={AlertTriangle}>Grace period {selectedSchema.GracePeriodDays} days</Badge>
             </div>

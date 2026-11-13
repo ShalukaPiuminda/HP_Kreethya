@@ -21,13 +21,25 @@ export interface HpGuarantor {
   phone?: string | null;
 }
 
+export interface HpDocumentChargeRange {
+  id?: number;
+  schema_id?: number;
+  from_amount: number | string;
+  to_amount: number | string;
+  charge_type: 'percentage' | 'fixed';
+  charge_value: number | string;
+}
+
 export interface HpSchema {
   id: number;
   SchemaType: string;
   DownpaymentPrecentage: string | number;
   InstallmentRate: string | number;
   NoOfInstallment: number;
+  DocumentChargeType?: 'percentage' | 'fixed' | 'range';
   DocumentCharagePrecentage: string | number;
+  DocumentChargeAmount?: string | number;
+  document_charge_ranges?: HpDocumentChargeRange[];
   PanaltyCharage: string | number;
   GracePeriodDays: number;
   /** ON: document charge is financed. OFF: collected upfront with the down payment. */

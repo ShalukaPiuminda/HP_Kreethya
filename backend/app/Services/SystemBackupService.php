@@ -34,6 +34,7 @@ class SystemBackupService
             'customers',
             'suppliers',
             'm_schemas',
+            'm_schema_document_charge_ranges',
             'm_guarantors',
             'bank_details',
             'bank_branches',
