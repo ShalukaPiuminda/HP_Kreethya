@@ -26,6 +26,27 @@ class SchemaController extends BranchScopedCrudController
         return ['documentChargeRanges'];
     }
 
+    protected function normaliseRequest(Request $request): void
+    {
+        parent::normaliseRequest($request);
+
+        foreach (['IncludeDocumentCharge', 'DownpaymentRequired', 'CollectFirstInstallment'] as $field) {
+            if ($request->has($field)) {
+                $val = $request->input($field);
+                if (is_string($val)) {
+                    $lower = strtolower(trim($val));
+                    if (in_array($lower, ['true', '1'], true)) {
+                        $request->merge([$field => true]);
+                    } elseif (in_array($lower, ['false', '0'], true)) {
+                        $request->merge([$field => false]);
+                    }
+                } elseif (is_numeric($val)) {
+                    $request->merge([$field => (bool) $val]);
+                }
+            }
+        }
+    }
+
     protected function rules(?Model $model = null): array
     {
         $chargeType = request('DocumentChargeType', $model?->DocumentChargeType ?? 'percentage');

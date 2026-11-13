@@ -161,8 +161,11 @@ class SchemeDocumentChargeRangeTest extends TestCase
             'charge_value' => 500,
         ]);
 
-        // 3. Update Scheme ranges
+        // 3. Update Scheme ranges and test boolean string acceptance ("true", "false", "1", "0")
         $this->putJson("/api/v1/schemas/{$schemaId}", [
+            'IncludeDocumentCharge' => 'false',
+            'DownpaymentRequired' => '1',
+            'CollectFirstInstallment' => 'true',
             'ranges' => [
                 [
                     'from_amount' => 200,
@@ -172,6 +175,9 @@ class SchemeDocumentChargeRangeTest extends TestCase
                 ],
             ],
         ])->assertOk()
+            ->assertJsonPath('data.IncludeDocumentCharge', false)
+            ->assertJsonPath('data.DownpaymentRequired', true)
+            ->assertJsonPath('data.CollectFirstInstallment', true)
             ->assertJsonCount(1, 'data.document_charge_ranges')
             ->assertJsonPath('data.document_charge_ranges.0.from_amount', '200.00');
 

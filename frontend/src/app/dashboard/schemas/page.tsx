@@ -75,6 +75,10 @@ export default function SchemasPage() {
       }
       preparePayload={(payload) => {
         const next = { ...payload };
+        next.DownpaymentRequired = isOn(next.DownpaymentRequired);
+        next.IncludeDocumentCharge = isOn(next.IncludeDocumentCharge);
+        next.CollectFirstInstallment = isOn(next.CollectFirstInstallment);
+
         if (next.DownpaymentRequired === false) {
           next.DownpaymentPrecentage = 0;
         }
@@ -180,18 +184,18 @@ export default function SchemasPage() {
       )}
       fields={[
         { name: 'SchemaType', label: 'Scheme Name' },
-        { name: 'DownpaymentRequired', label: 'Down Payment Required' },
-        { name: 'DownpaymentPrecentage', label: 'Down Payment %' },
-        { name: 'InstallmentRate', label: 'Interest Rate %' },
-        { name: 'NoOfInstallment', label: 'Installments' },
+        { name: 'DownpaymentRequired', label: 'Down Payment Required', type: 'toggle' },
+        { name: 'DownpaymentPrecentage', label: 'Down Payment %', type: 'number' },
+        { name: 'InstallmentRate', label: 'Interest Rate %', type: 'number' },
+        { name: 'NoOfInstallment', label: 'Installments', type: 'number' },
         { name: 'DocumentChargeType', label: 'Document Charge Type' },
-        { name: 'DocumentCharagePrecentage', label: 'Document Charge %' },
-        { name: 'DocumentChargeAmount', label: 'Fixed Document Charge' },
-        { name: 'ranges_json', label: 'Ranges' },
-        { name: 'IncludeDocumentCharge', label: 'In Capital' },
-        { name: 'PanaltyCharage', label: 'Penalty %' },
-        { name: 'GracePeriodDays', label: 'Grace Period Days' },
-        { name: 'CollectFirstInstallment', label: 'Collect 1st Inst' },
+        { name: 'DocumentCharagePrecentage', label: 'Document Charge %', type: 'number' },
+        { name: 'DocumentChargeAmount', label: 'Fixed Document Charge', type: 'number' },
+        { name: 'ranges_json', label: 'Ranges', type: 'hidden' },
+        { name: 'IncludeDocumentCharge', label: 'In Capital', type: 'toggle' },
+        { name: 'PanaltyCharage', label: 'Penalty %', type: 'number' },
+        { name: 'GracePeriodDays', label: 'Grace Period Days', type: 'number' },
+        { name: 'CollectFirstInstallment', label: 'Collect 1st Inst', type: 'toggle' },
       ]}
       columns={[
         {
