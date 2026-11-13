@@ -55,7 +55,7 @@ export default function LoginPage() {
           <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 backdrop-blur">
             <BarChart3 className="h-7 w-7 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Stylo-Piyestra</h1>
+          <h1 className="text-2xl font-bold text-white">HP-Kreethya</h1>
           <p className="mt-1 text-sm text-indigo-200/70">
             Hire Purchase Management System
           </p>

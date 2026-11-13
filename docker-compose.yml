@@ -8,7 +8,7 @@ services:
     container_name: erp_laravel_api
     restart: unless-stopped
     environment:
-      APP_NAME: "Hire Purchase ERP"
+      APP_NAME: "HP-Kreethya"
       APP_ENV: local
       APP_KEY: ${APP_KEY:-base64:Xfc9sekJv/di0VVVKrK/6bkBQrGqr8yk4To7bFaBXq8=}
       APP_DEBUG: "true"

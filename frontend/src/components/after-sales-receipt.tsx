@@ -117,7 +117,7 @@ export function AfterSalesReceipt({
               <img src={company.logo} alt="" className="h-[18mm] w-auto max-w-[50mm] shrink-0 object-contain grayscale contrast-150" />
             )}
             <div className="min-w-0">
-              <div className="text-[18px] font-bold uppercase leading-tight">{company?.name || 'Stylo-Piyestra'}</div>
+              <div className="text-[18px] font-bold uppercase leading-tight">{company?.name || 'HP-Kreethya'}</div>
               {address && <div className="whitespace-pre-line">{address}</div>}
               {phone && <div>Tel: {phone}</div>}
             </div>

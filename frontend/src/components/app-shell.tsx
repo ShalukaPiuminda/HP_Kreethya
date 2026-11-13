@@ -316,7 +316,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {!collapsed && (
               <span className="min-w-0">
                 <span className="block truncate text-sm font-bold tracking-wide text-slate-950">
-                  Stylo-Piyestra
+                  HP-Kreethya
                 </span>
                 <span className="block truncate text-xs text-slate-500">
                   Operations workspace

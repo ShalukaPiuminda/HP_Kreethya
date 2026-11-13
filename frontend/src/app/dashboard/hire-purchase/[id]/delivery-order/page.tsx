@@ -49,7 +49,7 @@ export default function HpDeliveryOrderPage() {
       <article className="min-h-[1050px] bg-white p-10 text-slate-950 shadow-sm ring-1 ring-slate-200 print:min-h-0 print:p-0 print:shadow-none print:ring-0">
         <header className="flex items-start justify-between border-b-2 border-slate-900 pb-6">
           <div>
-            <div className="text-2xl font-black tracking-tight">STYLO-PIYESTRA</div>
+            <div className="text-2xl font-black tracking-tight">HP-KREETHYA</div>
             <div className="mt-1 text-sm text-slate-500">Head Office · Colombo · Sri Lanka</div>
           </div>
           <div className="text-right">

@@ -90,7 +90,7 @@ export default function SalesDeliveryOrderPage() {
         <header className="flex items-start justify-between border-b-2 border-slate-900 pb-6">
           <div>
             <div className="text-2xl font-black tracking-tight">
-              {company?.name || 'Stylo-Piyestra'}
+              {company?.name || 'HP-Kreethya'}
             </div>
             <div className="mt-2 space-y-1 text-sm text-slate-500">
               {branch?.name && <div>{branch.name} {branch.bccode ? `· ${branch.bccode}` : ''}</div>}

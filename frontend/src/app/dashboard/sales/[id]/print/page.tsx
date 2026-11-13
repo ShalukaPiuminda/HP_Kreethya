@@ -148,7 +148,7 @@ export default function SalesInvoicePrintPage() {
             )}
             <div className="min-w-0">
               <div className="text-[17px] font-black uppercase leading-tight tracking-tight">
-                {company?.name || 'Hire Purchase ERP'}
+                {company?.name || 'HP-Kreethya'}
               </div>
               {address && <div className="mt-0.5 whitespace-pre-line text-[12px] text-slate-700">{address}</div>}
             </div>
