@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class THirePurchaseSum extends Model
 {
     protected $table = 't_hire_purchase_sums';
-    protected $fillable = ['invoice_no', 'reference_no', 'opening_reference_no', 'opening_note', 'agreement_no', 'invoice_date', 'customer_code', 'customer_name', 'customer_nic', 'customer_phone', 'customer_address', 'guarantor_1_code', 'guarantor_2_code', 'schema_type', 'store_id', 'document_charge_rate', 'document_charge', 'down_payment_rate', 'down_payment', 'advance_applied', 'down_payment_outstanding', 'transport', 'instalment_rate', 'instalment_amount', 'no_of_instalment', 'instalment_due_date', 'instalment', 'due_amount', 'gross_amount', 'discount', 'discount_type', 'discount_value', 'net_amount', 'contract_amount', 'paid_amount', 'outstanding_amount', 'returned_amount', 'is_cash_converted', 'is_opening', 'status', 'converted_at', 'completed_at', 'BC', 'UID'];
+    protected $fillable = ['invoice_no', 'reference_no', 'opening_reference_no', 'opening_note', 'agreement_no', 'invoice_date', 'customer_code', 'customer_name', 'customer_nic', 'customer_phone', 'customer_address', 'guarantor_1_code', 'guarantor_2_code', 'schema_type', 'store_id', 'document_charge_rate', 'document_charge', 'down_payment_rate', 'down_payment', 'advance_applied', 'down_payment_outstanding', 'transport', 'instalment_rate', 'instalment_amount', 'no_of_instalment', 'instalment_due_date', 'instalment', 'due_amount', 'gross_amount', 'discount', 'discount_type', 'discount_value', 'net_amount', 'contract_amount', 'paid_amount', 'outstanding_amount', 'returned_amount', 'is_cash_converted', 'is_opening', 'document_charge_in_capital', 'first_installment_collected', 'status', 'converted_at', 'completed_at', 'BC', 'UID'];
     public $timestamps = false;
 
     protected $casts = [
@@ -30,6 +30,8 @@ class THirePurchaseSum extends Model
         'returned_amount' => 'decimal:2',
         'is_cash_converted' => 'boolean',
         'is_opening' => 'boolean',
+        'document_charge_in_capital' => 'boolean',
+        'first_installment_collected' => 'decimal:2',
         'converted_at' => 'datetime',
         'completed_at' => 'datetime',
     ];

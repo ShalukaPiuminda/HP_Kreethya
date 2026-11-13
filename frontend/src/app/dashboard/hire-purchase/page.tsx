@@ -59,6 +59,7 @@ import {
   type HpOptions,
   type HpSummary,
   money,
+  schemeFlag,
   shortDate,
   today,
 } from '@/lib/hp';
@@ -128,6 +129,7 @@ type AgreementForm = {
   store_id: string;
   down_payment: string;
   advance_amount: string;
+  first_installment_amount: string;
   down_payment_method: string;
   bank_detail_id: string;
   transport: string;
@@ -176,6 +178,7 @@ const emptyForm = (): AgreementForm => ({
   store_id: '',
   down_payment: '0',
   advance_amount: '0',
+  first_installment_amount: '',
   down_payment_method: 'cash',
   bank_detail_id: '',
   transport: '0',
@@ -394,7 +397,16 @@ export default function HirePurchasePage() {
               <button onClick={() => setOpeningOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">
                 <Plus className="h-4 w-4" /> Opening HP
               </button>
-              <button onClick={() => setCreateOpen(true)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700">
+              <button onClick={async () => {
+                // Reload schemes so changes made on the Schemes page apply to this form.
+                try {
+                  const fresh = await api.get<HpOptions>('/v1/hp/options');
+                  if (fresh.data) setOptions(fresh.data);
+                } catch {
+                  // Keep the options already loaded.
+                }
+                setCreateOpen(true);
+              }} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700">
                 <Plus className="h-4 w-4" /> New agreement
               </button>
             </div>
@@ -671,6 +683,13 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
   const [quickAddForm, setQuickAddForm] = useState<PersonQuickAddForm>(emptyPersonQuickAdd);
   const [quickAddSaving, setQuickAddSaving] = useState(false);
   const [calculation, setCalculation] = useState<HpCalculation | null>(null);
+  // Until the user edits it, the 1st installment field follows the monthly installment.
+  const [firstInstallmentTouched, setFirstInstallmentTouched] = useState(false);
+  // The upfront document charge amount the user confirmed as received. If the
+  // amount changes afterwards (scheme, items or down payment), it must be confirmed again.
+  const [docChargeConfirmedAmount, setDocChargeConfirmedAmount] = useState<number | null>(null);
+  // Same for the 1st installment collected at sale.
+  const [firstInstallmentConfirmedAmount, setFirstInstallmentConfirmedAmount] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanNotice, setScanNotice] = useState<ScanOutcome | null>(null);
@@ -703,10 +722,29 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
 
   const selectedStore = Number(form.store_id);
   const selectedCustomer = customers.find((customer) => customer.Code === form.customer_code);
+  const selectedSchema = options.schemas.find((schema) => schema.SchemaType === form.schema_type);
+  // The live calculation carries the scheme's current settings from the server;
+  // the scheme list is the fallback before a calculation is available.
+  const dpRequired = calculation?.down_payment_required ?? schemeFlag(selectedSchema?.DownpaymentRequired, true);
+  const docInCapital = calculation?.document_charge_in_capital ?? schemeFlag(selectedSchema?.IncludeDocumentCharge, true);
+  const collectFirst = calculation?.collect_first_installment ?? schemeFlag(selectedSchema?.CollectFirstInstallment, false);
+  const downPayment = dpRequired ? Number(form.down_payment || 0) : 0;
+  const advanceAmount = dpRequired ? Number(form.advance_amount || 0) : 0;
+  const upfrontDocumentCharge = calculation && !docInCapital ? Number(calculation.upfront_document_charge || 0) : 0;
+  const docChargeConfirmed = upfrontDocumentCharge <= 0
+    || (docChargeConfirmedAmount !== null && Math.abs(docChargeConfirmedAmount - upfrontDocumentCharge) < 0.005);
+  const firstInstallmentInput = firstInstallmentTouched
+    ? form.first_installment_amount
+    : calculation && collectFirst ? String(calculation.installment_monthly) : '';
+  const firstInstallment = collectFirst ? Number(firstInstallmentInput || 0) : 0;
+  const firstInstallmentConfirmed = firstInstallment > 0
+    && firstInstallmentConfirmedAmount !== null
+    && Math.abs(firstInstallmentConfirmedAmount - firstInstallment) < 0.005;
   const tenderAmount = Math.max(
     0,
-    Number(form.down_payment || 0) - Number(form.advance_amount || 0)
-  );
+    downPayment + upfrontDocumentCharge - advanceAmount
+  ) + firstInstallment;
+  const showPaymentMethod = dpRequired || tenderAmount > 0;
   const netAmount = useMemo(() => lines.reduce((total, line) => {
     const item = options.items.find((candidate) => candidate.item_code === line.item_code);
     const batch = item?.batches.find((candidate) => candidate.batch_no === line.batch_no && candidate.store_id === selectedStore);
@@ -718,7 +756,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
   const itemNetAmount = Math.max(0, netAmount - headerDiscountAmount);
 
   useEffect(() => {
-    if (!form.schema_type || itemNetAmount <= 0 || Number(form.down_payment) > itemNetAmount) {
+    if (!form.schema_type || itemNetAmount <= 0 || downPayment > itemNetAmount) {
       const clearTimer = window.setTimeout(() => setCalculation(null), 0);
       return () => window.clearTimeout(clearTimer);
     }
@@ -727,7 +765,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
         const response = await api.post<HpCalculation>('/v1/hp/calculate', {
           schema_type: form.schema_type,
           net_amount: itemNetAmount,
-          down_payment: Number(form.down_payment || 0),
+          down_payment: downPayment,
           transport: Number(form.transport || 0),
         });
         setCalculation(response.data || null);
@@ -736,7 +774,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
       }
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [form.down_payment, form.schema_type, form.transport, itemNetAmount]);
+  }, [downPayment, form.schema_type, form.transport, itemNetAmount]);
 
   function updateLine(index: number, patch: Partial<LineForm>) {
     setLines((current) => current.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line));
@@ -804,8 +842,10 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
         guarantor_2_code: form.guarantor_2_code || null,
         schema_type: form.schema_type,
         store_id: Number(form.store_id),
-        down_payment: Number(form.down_payment || 0),
-        advance_amount: Number(form.advance_amount || 0),
+        down_payment: downPayment,
+        advance_amount: advanceAmount,
+        first_installment_amount: collectFirst ? firstInstallment : null,
+        document_charge_confirmed: upfrontDocumentCharge > 0 ? docChargeConfirmed : null,
         down_payment_method: form.down_payment_method,
         bank_detail_id: form.bank_detail_id ? Number(form.bank_detail_id) : null,
         transport: Number(form.transport || 0),
@@ -837,8 +877,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
     }
   }
 
-  const selectedSchema = options.schemas.find((schema) => schema.SchemaType === form.schema_type);
-  const needsBankAccount = ['card', 'bank_transfer'].includes(form.down_payment_method);
+  const needsBankAccount = showPaymentMethod && ['card', 'bank_transfer'].includes(form.down_payment_method);
   const totalUnits = lines.reduce((sum, line) => sum + Number(line.qty || 0), 0);
   const blockReason = !form.customer_code
     ? 'Select a customer to continue.'
@@ -850,13 +889,23 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
           ? 'Select a hire purchase scheme.'
           : lines.some((line) => !line.item_code || Number(line.qty || 0) <= 0)
             ? 'Choose an item and quantity on every line.'
-            : Number(form.down_payment || 0) > itemNetAmount
-              ? 'Down payment exceeds the net item value.'
-              : needsBankAccount && !form.bank_detail_id
-                ? 'Choose the bank account for card / bank transfer.'
+            : dpRequired && downPayment <= 0
+              ? 'Enter the down payment. This scheme requires one.'
+              : downPayment > itemNetAmount
+                ? 'Down payment exceeds the net item value.'
                 : !calculation
                   ? 'Calculating the installment plan...'
-                  : null;
+                  : !docChargeConfirmed
+                    ? 'Confirm the document charge has been received from the customer.'
+                  : collectFirst && firstInstallment <= 0
+                    ? 'Enter the 1st installment payment collected now.'
+                    : collectFirst && firstInstallment > Number(calculation.installment_monthly) + 0.009
+                      ? '1st installment payment cannot exceed the monthly installment.'
+                    : collectFirst && !firstInstallmentConfirmed
+                      ? 'Confirm the 1st installment has been received from the customer.'
+                      : needsBankAccount && !form.bank_detail_id
+                        ? 'Choose the bank account for card / bank transfer.'
+                        : null;
 
   return (
     <>
@@ -931,7 +980,18 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
             </Field>
             <Field label="Scheme" required className="xl:col-span-3">
               <IconSlot icon={Layers}>
-                <SearchSelect value={form.schema_type} onChange={(value) => setForm({ ...form, schema_type: value })} options={options.schemas.map((schema) => ({ value: schema.SchemaType, label: schema.SchemaType, description: `${schema.NoOfInstallment} months` }))} placeholder="Select scheme" searchPlaceholder="Search schemes..." className={iconInputClass} required />
+                <SearchSelect value={form.schema_type} onChange={(value) => {
+                  const next = options.schemas.find((schema) => schema.SchemaType === value);
+                  const nextDpRequired = schemeFlag(next?.DownpaymentRequired, true);
+                  setFirstInstallmentTouched(false);
+                  setForm({
+                    ...form,
+                    schema_type: value,
+                    first_installment_amount: '',
+                    down_payment: nextDpRequired ? form.down_payment : '0',
+                    advance_amount: nextDpRequired ? form.advance_amount : '0',
+                  });
+                }} options={options.schemas.map((schema) => ({ value: schema.SchemaType, label: schema.SchemaType, description: `${schema.NoOfInstallment} months` }))} placeholder="Select scheme" searchPlaceholder="Search schemes..." className={iconInputClass} required />
               </IconSlot>
             </Field>
             <Field label="Installment Due Day" required hint="Same day as agreement date" className="xl:col-span-2">
@@ -945,8 +1005,9 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
             <div className="mt-4 flex flex-wrap gap-2">
               <Badge icon={CalendarClock} tone="indigo">{selectedSchema.NoOfInstallment} installments</Badge>
               <Badge icon={Percent}>Rate {Number(selectedSchema.InstallmentRate)}%</Badge>
-              <Badge icon={Banknote}>Down payment {Number(selectedSchema.DownpaymentPrecentage)}%</Badge>
-              <Badge icon={FileText}>Document charge {Number(selectedSchema.DocumentCharagePrecentage)}%</Badge>
+              <Badge icon={Banknote}>{dpRequired ? `Down payment ${Number(selectedSchema.DownpaymentPrecentage)}%` : 'No down payment'}</Badge>
+              <Badge icon={FileText}>Document charge {Number(selectedSchema.DocumentCharagePrecentage)}%{docInCapital ? '' : ' · upfront'}</Badge>
+              {collectFirst && <Badge icon={CalendarClock} tone="indigo">1st installment at sale</Badge>}
               <Badge icon={AlertTriangle}>Grace period {selectedSchema.GracePeriodDays} days</Badge>
             </div>
           )}
@@ -1139,7 +1200,13 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
         </FormSection>
 
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <FormSection icon={CreditCard} title="Down Payment" subtitle="Collected now. The rest is split into monthly installments.">
+          <FormSection
+            icon={CreditCard}
+            title="Payment at Sale"
+            subtitle={tenderAmount > 0 || dpRequired
+              ? 'Collected now. The rest is split into monthly installments.'
+              : 'This scheme takes no payment at sale. The full amount is split into monthly installments.'}
+          >
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Header Discount">
                 <DiscountInput
@@ -1152,12 +1219,67 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
               <Field label="Transport">
                 <MoneyInput icon={Truck} value={form.transport} onChange={(value) => setForm({ ...form, transport: value })} />
               </Field>
-              <Field label="Down Payment" required hint={calculation ? `Rec. ${money(calculation.recommended_down_payment)}` : undefined}>
-                <MoneyInput icon={Banknote} value={form.down_payment} onChange={(value) => setForm({ ...form, down_payment: value })} required />
-              </Field>
-              <Field label="Apply Advance" hint={selectedCustomer ? `Avail. ${money(selectedCustomer.advance_balance)}` : undefined}>
-                <MoneyInput icon={Wallet} value={form.advance_amount} max={Math.min(Number(form.down_payment || 0), Number(selectedCustomer?.advance_balance || 0))} onChange={(value) => setForm({ ...form, advance_amount: value })} />
-              </Field>
+              {dpRequired && (
+                <Field label="Down Payment" required hint={calculation ? `Rec. ${money(calculation.recommended_down_payment)}` : undefined}>
+                  <MoneyInput icon={Banknote} value={form.down_payment} onChange={(value) => setForm({ ...form, down_payment: value })} required />
+                </Field>
+              )}
+              {!docInCapital && calculation && (
+                <Field label="Document Charge" required hint={docChargeConfirmed ? 'Received' : 'Confirm when paid'}>
+                  <div className="flex items-stretch gap-2">
+                    <div className="min-w-0 flex-1">
+                      <IconSlot icon={FileText}>
+                        <input type="text" readOnly value={money(upfrontDocumentCharge)} className={`${iconInputClass} cursor-default bg-slate-50 tabular-nums`} />
+                      </IconSlot>
+                    </div>
+                    <button
+                      type="button"
+                      aria-pressed={docChargeConfirmed}
+                      onClick={() => setDocChargeConfirmedAmount(docChargeConfirmed ? null : upfrontDocumentCharge)}
+                      title={docChargeConfirmed ? 'Click to undo the confirmation' : 'Confirm the customer has paid the document charge'}
+                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-indigo-100 ${docChargeConfirmed ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'}`}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      {docChargeConfirmed ? 'Paid' : 'Confirm'}
+                    </button>
+                  </div>
+                </Field>
+              )}
+              {collectFirst && (
+                <Field label="1st Installment Payment" required hint={firstInstallmentConfirmed ? 'Received' : calculation ? `Installment ${money(calculation.installment_monthly)}` : undefined}>
+                  <div className="flex items-stretch gap-2">
+                    <div className="min-w-0 flex-1">
+                      <MoneyInput
+                        icon={CalendarClock}
+                        value={firstInstallmentInput}
+                        max={calculation ? Number(calculation.installment_monthly) : undefined}
+                        onChange={(value) => {
+                          setFirstInstallmentTouched(true);
+                          setForm({ ...form, first_installment_amount: value });
+                        }}
+                        required
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      aria-pressed={firstInstallmentConfirmed}
+                      disabled={firstInstallment <= 0}
+                      onClick={() => setFirstInstallmentConfirmedAmount(firstInstallmentConfirmed ? null : firstInstallment)}
+                      title={firstInstallmentConfirmed ? 'Click to undo the confirmation' : 'Confirm the customer has paid the 1st installment'}
+                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 ${firstInstallmentConfirmed ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'}`}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      {firstInstallmentConfirmed ? 'Paid' : 'Confirm'}
+                    </button>
+                  </div>
+                </Field>
+              )}
+              {dpRequired && (
+                <Field label="Apply Advance" hint={selectedCustomer ? `Avail. ${money(selectedCustomer.advance_balance)}` : undefined}>
+                  <MoneyInput icon={Wallet} value={form.advance_amount} max={Math.min(downPayment + upfrontDocumentCharge, Number(selectedCustomer?.advance_balance || 0))} onChange={(value) => setForm({ ...form, advance_amount: value })} />
+                </Field>
+              )}
+              {showPaymentMethod && (
               <Field label="Payment Method" required>
                 <IconSlot icon={paymentMethodIcon(form.down_payment_method)}>
                   <select value={form.down_payment_method} onChange={(event) => setForm({ ...form, down_payment_method: event.target.value, bank_detail_id: ['card', 'bank_transfer'].includes(event.target.value) ? form.bank_detail_id || options.bank_accounts[0]?.id?.toString() || '' : form.bank_detail_id })} className={iconInputClass}>
@@ -1168,6 +1290,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
                   </select>
                 </IconSlot>
               </Field>
+              )}
               {needsBankAccount && (
                 <Field label="Bank Account" required>
                   <IconSlot icon={Landmark}>
@@ -1177,7 +1300,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
               )}
             </div>
 
-            {form.down_payment_method === 'cheque' && tenderAmount > 0 && (
+            {showPaymentMethod && form.down_payment_method === 'cheque' && tenderAmount > 0 && (
               <div className="mt-5 border-t border-slate-100 pt-5">
                 <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <ScrollText className="h-4 w-4 text-indigo-500" />
@@ -1201,15 +1324,23 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
               <SummaryRow label="Items after line discounts" value={money(netAmount)} />
               <SummaryRow label="Header discount" value={headerDiscountAmount > 0 ? `− ${money(headerDiscountAmount)}` : money(0)} tone={headerDiscountAmount > 0 ? 'rose' : undefined} />
               <SummaryHighlight label="Net Items" value={money(itemNetAmount)} />
-              <SummaryRow label="Down payment" value={money(form.down_payment)} />
-              <SummaryRow label="Advance used" value={money(form.advance_amount)} tone="emerald" />
+              <SummaryRow label="Down payment" value={dpRequired ? money(downPayment) : 'Not required'} />
+              {upfrontDocumentCharge > 0 && (
+                <SummaryRow label="Document charge (now)" value={money(upfrontDocumentCharge)} />
+              )}
+              {collectFirst && (
+                <SummaryRow label="1st installment (now)" value={money(firstInstallment)} />
+              )}
+              {advanceAmount > 0 && (
+                <SummaryRow label="Advance used" value={`− ${money(advanceAmount)}`} tone="emerald" />
+              )}
               <SummaryRow label="Tender now" value={money(tenderAmount)} tone="emerald" />
             </div>
             {calculation ? (
               <>
                 <div className="space-y-2.5 border-t border-slate-200 px-5 py-4">
                   <SummaryRow label="Interest" value={money(calculation.interest_amount)} />
-                  <SummaryRow label="Document charge" value={money(calculation.document_charge)} />
+                  <SummaryRow label={docInCapital ? 'Document charge' : 'Document charge (paid now)'} value={docInCapital ? money(calculation.document_charge) : money(0)} />
                   <SummaryRow label="Transport" value={money(calculation.transport)} />
                   {Number(calculation.rounding_adjustment || 0) > 0 && (
                     <SummaryRow label="Installment round-up" value={`+ ${money(calculation.rounding_adjustment)}`} tone="rose" />
@@ -1230,7 +1361,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
                 Select a scheme and items to see the installment plan.
               </div>
             )}
-            {Number(form.down_payment || 0) > itemNetAmount && itemNetAmount > 0 && (
+            {downPayment > itemNetAmount && itemNetAmount > 0 && (
               <div className="flex items-start gap-2 border-t border-rose-200 bg-rose-50 px-5 py-3 text-xs font-medium text-rose-700">
                 <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
                 Down payment exceeds the net item value.

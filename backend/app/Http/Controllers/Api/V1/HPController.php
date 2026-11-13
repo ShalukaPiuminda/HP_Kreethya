@@ -24,7 +24,7 @@ class HPController extends BaseController
         $validated = $request->validate([
             'schema_type' => ['required', 'string'],
             'net_amount' => ['required', 'numeric', 'min:0.01'],
-            'down_payment' => ['required', 'numeric', 'min:0'],
+            'down_payment' => ['nullable', 'numeric', 'min:0'],
             'transport' => ['nullable', 'numeric', 'min:0'],
         ]);
 
@@ -527,8 +527,10 @@ class HPController extends BaseController
             'guarantor_2_code' => ['nullable', 'string', 'different:guarantor_1_code', Rule::exists('m_guarantors', 'Code')->where('BC', $branchCode)],
             'schema_type' => ['required', 'string', Rule::exists('m_schemas', 'SchemaType')->where('BC', $branchCode)],
             'store_id' => ['required', 'integer', Rule::exists('stores', 'id')->where('BC', $branchCode)],
-            'down_payment' => ['required', 'numeric', 'min:0'],
+            'down_payment' => ['nullable', 'numeric', 'min:0'],
             'advance_amount' => ['nullable', 'numeric', 'min:0'],
+            'first_installment_amount' => ['nullable', 'numeric', 'min:0'],
+            'document_charge_confirmed' => ['nullable', 'boolean'],
             'down_payment_method' => ['required', Rule::in(['cash', 'card', 'cheque', 'bank_transfer'])],
             'bank_detail_id' => ['nullable', 'integer'],
             'transport' => ['nullable', 'numeric', 'min:0'],

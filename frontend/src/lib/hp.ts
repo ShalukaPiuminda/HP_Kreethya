@@ -30,6 +30,16 @@ export interface HpSchema {
   DocumentCharagePrecentage: string | number;
   PanaltyCharage: string | number;
   GracePeriodDays: number;
+  /** ON: document charge is financed. OFF: collected upfront with the down payment. */
+  IncludeDocumentCharge?: boolean | number;
+  DownpaymentRequired?: boolean | number;
+  /** ON: the 1st installment is collected when the HP sale is posted. */
+  CollectFirstInstallment?: boolean | number;
+}
+
+/** Scheme flags arrive as booleans (or 0/1); a missing flag keeps the default. */
+export function schemeFlag(value: boolean | number | undefined, fallback: boolean) {
+  return value === undefined || value === null ? fallback : Boolean(Number(value));
 }
 
 export interface HpBankAccount {
@@ -246,8 +256,13 @@ export interface HpSummary {
 
 export interface HpCalculation {
   principal: number;
+  down_payment: number;
   interest_amount: number;
   document_charge: number;
+  upfront_document_charge: number;
+  document_charge_in_capital: boolean;
+  down_payment_required: boolean;
+  collect_first_installment: boolean;
   transport: number;
   rounding_adjustment: number;
   gross_hp_amount: number;

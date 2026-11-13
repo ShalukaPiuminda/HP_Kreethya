@@ -591,4 +591,139 @@ class HirePurchaseWorkflowTest extends TestCase
             'dr_amount' => $firstBalance,
         ]);
     }
+
+    public function test_document_charge_outside_capital_is_collected_upfront(): void
+    {
+        $this->createSchemeOption('HP-DOC-UP', ['IncludeDocumentCharge' => false]);
+
+        // Principal 80000 + interest 8000 = 88000 financed (22000 x 4).
+        // Document charge 1600 is collected now with the 20000 down payment.
+        $this->postJson('/api/v1/hp/calculate', [
+            'schema_type' => 'HP-DOC-UP',
+            'net_amount' => 100000,
+            'down_payment' => 20000,
+        ])->assertOk()
+            ->assertJsonPath('data.upfront_document_charge', 1600)
+            ->assertJsonPath('data.gross_hp_amount', 88000)
+            ->assertJsonPath('data.installment_monthly', 22000);
+
+        $this->postJson('/api/v1/hp', $this->agreementPayload('HP-DOC-UP', ['down_payment' => 20000]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('document_charge_confirmed');
+
+        $this->postJson('/api/v1/hp', $this->agreementPayload('HP-DOC-UP', [
+            'down_payment' => 20000,
+            'document_charge_confirmed' => true,
+        ]))
+            ->assertCreated()
+            ->assertJsonPath('data.document_charge', '1600.00')
+            ->assertJsonPath('data.document_charge_in_capital', false)
+            ->assertJsonPath('data.instalment', '22000.00')
+            ->assertJsonPath('data.due_amount', '88000.00')
+            ->assertJsonPath('data.contract_amount', '109600.00')
+            ->assertJsonPath('data.paid_amount', '21600.00')
+            ->assertJsonPath('data.outstanding_amount', '88000.00');
+
+        $this->assertDatabaseHas('t_customer_account_trances', [
+            'trance_type' => 'HP_DOWN_PAYMENT',
+            'cr_amount' => 21600,
+        ]);
+        $this->assertBooksBalance();
+    }
+
+    public function test_down_payment_requirement_follows_scheme(): void
+    {
+        $this->postJson('/api/v1/hp', $this->agreementPayload('HP-4', ['down_payment' => 0]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('down_payment');
+
+        $this->createSchemeOption('HP-NO-DP', ['DownpaymentRequired' => false, 'DownpaymentPrecentage' => 0]);
+
+        // Any amount sent is ignored: principal is the full 100000.
+        $this->postJson('/api/v1/hp', $this->agreementPayload('HP-NO-DP', ['down_payment' => 5000]))
+            ->assertCreated()
+            ->assertJsonPath('data.down_payment', '0.00')
+            ->assertJsonPath('data.due_amount', '112000.00')
+            ->assertJsonPath('data.instalment', '28000.00')
+            ->assertJsonPath('data.paid_amount', '0.00');
+
+        $this->assertBooksBalance();
+    }
+
+    public function test_first_installment_can_be_collected_at_sale(): void
+    {
+        $this->createSchemeOption('HP-FIRST', ['CollectFirstInstallment' => true]);
+
+        // Financed 80000 + 8000 + 1600 = 89600 -> 22400 monthly.
+        $this->postJson('/api/v1/hp', $this->agreementPayload('HP-FIRST', ['down_payment' => 20000]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('first_installment_amount');
+        $this->postJson('/api/v1/hp', $this->agreementPayload('HP-FIRST', [
+            'down_payment' => 20000,
+            'first_installment_amount' => 22401,
+        ]))->assertStatus(422)
+            ->assertJsonValidationErrors('first_installment_amount');
+
+        $full = $this->postJson('/api/v1/hp', $this->agreementPayload('HP-FIRST', [
+            'down_payment' => 20000,
+            'first_installment_amount' => 22400,
+        ]))->assertCreated()
+            ->assertJsonPath('data.first_installment_collected', '22400.00')
+            ->assertJsonPath('data.instalments.0.status', 'paid')
+            ->assertJsonPath('data.instalments.1.status', 'pending')
+            ->assertJsonPath('data.paid_amount', '42400.00')
+            ->assertJsonPath('data.outstanding_amount', '67200.00')
+            ->assertJsonCount(1, 'data.instalments.0.payments');
+        $this->assertSame('cash', $full->json('data.instalments.0.payments.0.payment_method'));
+
+        $this->postJson('/api/v1/hp', $this->agreementPayload('HP-FIRST', [
+            'down_payment' => 20000,
+            'first_installment_amount' => 10000,
+        ]))->assertCreated()
+            ->assertJsonPath('data.instalments.0.status', 'partial')
+            ->assertJsonPath('data.instalments.0.balance_amount', '12400.00')
+            ->assertJsonPath('data.outstanding_amount', '79600.00');
+
+        $this->assertBooksBalance();
+    }
+
+    private function createSchemeOption(string $type, array $overrides): void
+    {
+        MSchema::create(array_merge([
+            'SchemaType' => $type,
+            'DownpaymentPrecentage' => 20,
+            'InstallmentRate' => 10,
+            'NoOfInstallment' => 4,
+            'DocumentCharagePrecentage' => 2,
+            'PanaltyCharage' => 2.5,
+            'GracePeriodDays' => 5,
+            'BC' => 'HQ',
+            'UID' => 'admin',
+        ], $overrides));
+    }
+
+    private function agreementPayload(string $schemaType, array $overrides = []): array
+    {
+        return array_merge([
+            'invoice_date' => '2026-01-01',
+            'customer_code' => $this->customer->Code,
+            'guarantor_1_code' => $this->guarantor->Code,
+            'schema_type' => $schemaType,
+            'store_id' => $this->store->id,
+            'down_payment_method' => 'cash',
+            'instalment_due_date' => 1,
+            'items' => [
+                ['item_code' => $this->item->item_code, 'qty' => 1],
+            ],
+        ], $overrides);
+    }
+
+    private function assertBooksBalance(): void
+    {
+        $this->assertEqualsWithDelta(
+            (float) \DB::table('t_account_trans')->sum('dr_amount'),
+            (float) \DB::table('t_account_trans')->sum('cr_amount'),
+            0.001
+        );
+    }
 }

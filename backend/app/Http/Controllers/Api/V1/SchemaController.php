@@ -58,6 +58,9 @@ class SchemaController extends BranchScopedCrudController
                 'max:100',
             ],
             'GracePeriodDays' => ['sometimes', 'integer', 'min:0'],
+            'IncludeDocumentCharge' => ['sometimes', 'boolean'],
+            'DownpaymentRequired' => ['sometimes', 'boolean'],
+            'CollectFirstInstallment' => ['sometimes', 'boolean'],
         ];
     }
 

@@ -33,7 +33,8 @@ export interface CrudField<TRecord extends CrudRecord = CrudRecord> {
   label: string;
   /** 'mobile' = Sri Lankan mobile: digits only, 10 characters, validated while typing. */
   /** 'image' = uploaded picture stored as a resized base64 data URL. */
-  type?: 'text' | 'email' | 'tel' | 'mobile' | 'number' | 'textarea' | 'select' | 'image' | 'hidden';
+  /** 'toggle' = on/off switch: kept as '1' / '0' in the form and sent as a boolean. */
+  type?: 'text' | 'email' | 'tel' | 'mobile' | 'number' | 'textarea' | 'select' | 'image' | 'toggle' | 'hidden';
   required?: boolean;
   placeholder?: string;
   help?: string | ((editingRecord: TRecord | null, values: Record<string, string>) => string | undefined);
@@ -65,6 +66,10 @@ export interface CrudColumn<TRecord extends CrudRecord> {
   label: string;
   className?: string;
   render?: (record: TRecord, records: TRecord[]) => React.ReactNode;
+}
+
+function isToggleOn(value: unknown) {
+  return value === true || value === 1 || value === '1' || value === 'true';
 }
 
 function buildErrorNotice(error: unknown, fallback: string) {
@@ -234,6 +239,10 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
 
     fields.forEach((field) => {
       const value = record[field.name];
+      if (field.type === 'toggle') {
+        nextValues[field.name] = isToggleOn(value) ? '1' : '0';
+        return;
+      }
       nextValues[field.name] =
         value === null || value === undefined ? '' : String(value);
     });
@@ -251,6 +260,10 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
       if (field.hidden?.(editingRecord, values)) return payload;
 
       const rawValue = values[field.name] ?? '';
+      if (field.type === 'toggle') {
+        payload[field.name] = isToggleOn(rawValue);
+        return payload;
+      }
       // Send exactly what the mobile input shows (digits only, 07XXXXXXXX).
       const value = field.type === 'mobile' ? toLocalMobile(rawValue) : rawValue;
 
@@ -529,6 +542,34 @@ export function CrudWorkspace<TRecord extends CrudRecord>({
                 const disabled = field.disabled?.(editingRecord, values) ?? false;
                 const help = typeof field.help === 'function' ? field.help(editingRecord, values) : field.help;
                 const inputClass = `w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100${disabled ? ' cursor-not-allowed bg-slate-100 text-slate-500' : ''}`;
+
+                if (field.type === 'toggle') {
+                  const on = isToggleOn(values[field.name]);
+                  return (
+                    <div key={field.name} className={`flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 ${fieldClass}`}>
+                      <div className="min-w-0">
+                        <span id={`toggle-${field.name}`} className="block text-sm font-semibold text-slate-800">{field.label}</span>
+                        {help && <span className="mt-0.5 block text-xs text-slate-500">{help}</span>}
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={on}
+                        aria-labelledby={`toggle-${field.name}`}
+                        disabled={disabled}
+                        onClick={() =>
+                          setValues((current) => ({
+                            ...current,
+                            [field.name]: isToggleOn(current[field.name]) ? '0' : '1',
+                          }))
+                        }
+                        className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60 ${on ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                      >
+                        <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                  );
+                }
 
                 return (
                   <label key={field.name} className={fieldClass}>

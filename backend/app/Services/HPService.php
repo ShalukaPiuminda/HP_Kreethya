@@ -44,7 +44,10 @@ class HPService
             ->firstOrFail();
 
         $netAmount = round((float) $data['net_amount'], 2);
-        $downPayment = round((float) $data['down_payment'], 2);
+        $downPaymentRequired = (bool) ($schema->DownpaymentRequired ?? true);
+        $documentChargeInCapital = (bool) ($schema->IncludeDocumentCharge ?? true);
+        // Schemes without a down payment ignore whatever amount was sent.
+        $downPayment = $downPaymentRequired ? round((float) ($data['down_payment'] ?? 0), 2) : 0.0;
         if ($downPayment > $netAmount) {
             throw ValidationException::withMessages([
                 'down_payment' => 'Down payment cannot exceed the item net amount.',
@@ -54,30 +57,37 @@ class HPService
         $principal = round($netAmount - $downPayment, 2);
         $interestAmount = round($principal * ((float) $schema->InstallmentRate / 100), 2);
         $documentCharge = round($principal * ((float) $schema->DocumentCharagePrecentage / 100), 2);
+        // When the scheme keeps the document charge out of capital it is collected upfront.
+        $financedDocumentCharge = $documentChargeInCapital ? $documentCharge : 0.0;
+        $upfrontDocumentCharge = $documentChargeInCapital ? 0.0 : $documentCharge;
         $transport = round((float) ($data['transport'] ?? 0), 2);
-        $rawGrossHpAmount = round($principal + $interestAmount + $documentCharge + $transport, 2);
+        $rawGrossHpAmount = round($principal + $interestAmount + $financedDocumentCharge + $transport, 2);
         $installmentCount = max(1, (int) $schema->NoOfInstallment);
         // Installments are always whole numbers: round the monthly amount up and
         // let the HP total grow by the difference (shown as the round-up adjustment).
         $installmentMonthly = (float) ceil(round($rawGrossHpAmount / $installmentCount, 2));
         $grossHpAmount = round($installmentMonthly * $installmentCount, 2);
         $roundingAdjustment = round($grossHpAmount - $rawGrossHpAmount, 2);
-        $contractAmount = round($downPayment + $grossHpAmount, 2);
+        $contractAmount = round($downPayment + $upfrontDocumentCharge + $grossHpAmount, 2);
 
         return [
             'principal' => $principal,
+            'down_payment' => $downPayment,
             'interest_amount' => $interestAmount,
             'document_charge' => $documentCharge,
+            'upfront_document_charge' => $upfrontDocumentCharge,
+            'document_charge_in_capital' => $documentChargeInCapital,
+            'down_payment_required' => $downPaymentRequired,
+            'collect_first_installment' => (bool) ($schema->CollectFirstInstallment ?? false),
             'transport' => $transport,
             'rounding_adjustment' => $roundingAdjustment,
             'gross_hp_amount' => $grossHpAmount,
             'contract_amount' => $contractAmount,
             'installment_monthly' => $installmentMonthly,
             'no_of_installments' => (int) $schema->NoOfInstallment,
-            'recommended_down_payment' => round(
-                $netAmount * ((float) $schema->DownpaymentPrecentage / 100),
-                2
-            ),
+            'recommended_down_payment' => $downPaymentRequired
+                ? round($netAmount * ((float) $schema->DownpaymentPrecentage / 100), 2)
+                : 0.0,
             'penalty_rate' => (float) $schema->PanaltyCharage,
             'grace_period_days' => (int) $schema->GracePeriodDays,
             'schema' => $schema,
@@ -124,22 +134,52 @@ class HPService
             $calc = $this->calculate([
                 'schema_type' => $data['schema_type'],
                 'net_amount' => $netAmount,
-                'down_payment' => $data['down_payment'],
+                'down_payment' => $data['down_payment'] ?? 0,
                 'transport' => $data['transport'] ?? 0,
             ], $user->BC);
+            $downPayment = (float) $calc['down_payment'];
+            if ($calc['down_payment_required'] && $downPayment <= 0) {
+                throw ValidationException::withMessages([
+                    'down_payment' => 'Down payment is required for this scheme.',
+                ]);
+            }
+            $upfrontDocumentCharge = (float) $calc['upfront_document_charge'];
+            if ($upfrontDocumentCharge > 0 && ! filter_var($data['document_charge_confirmed'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                throw ValidationException::withMessages([
+                    'document_charge_confirmed' => 'Confirm the document charge has been received from the customer.',
+                ]);
+            }
+            // Collected now, outside the installment schedule.
+            $upfrontAmount = round($downPayment + $upfrontDocumentCharge, 2);
             $advanceApplied = round((float) ($data['advance_amount'] ?? 0), 2);
-            $downPayment = round((float) $data['down_payment'], 2);
             if ($advanceApplied > (float) $customer->advance_balance + 0.009) {
                 throw ValidationException::withMessages([
                     'advance_amount' => 'Advance applied exceeds the customer advance balance.',
                 ]);
             }
-            if ($advanceApplied > $downPayment + 0.009) {
+            if ($advanceApplied > $upfrontAmount + 0.009) {
                 throw ValidationException::withMessages([
-                    'advance_amount' => 'Advance applied cannot exceed the down payment.',
+                    'advance_amount' => $upfrontDocumentCharge > 0
+                        ? 'Advance applied cannot exceed the down payment plus document charge.'
+                        : 'Advance applied cannot exceed the down payment.',
                 ]);
             }
-            $tenderAmount = round($downPayment - $advanceApplied, 2);
+            $firstInstallment = 0.0;
+            if ($calc['collect_first_installment']) {
+                $firstInstallment = round((float) ($data['first_installment_amount'] ?? 0), 2);
+                if ($firstInstallment <= 0) {
+                    throw ValidationException::withMessages([
+                        'first_installment_amount' => 'Enter the 1st installment amount collected at sale.',
+                    ]);
+                }
+                if ($firstInstallment > (float) $calc['installment_monthly'] + 0.009) {
+                    throw ValidationException::withMessages([
+                        'first_installment_amount' => 'The 1st installment payment cannot exceed the monthly installment.',
+                    ]);
+                }
+            }
+            $upfrontTender = round($upfrontAmount - $advanceApplied, 2);
+            $tenderAmount = round($upfrontTender + $firstInstallment, 2);
             $this->validatePaymentMethod(
                 $tenderAmount,
                 $data['down_payment_method'] ?? 'cash',
@@ -184,10 +224,12 @@ class HPService
                 'discount_value' => $headerDiscountValue,
                 'net_amount' => $netAmount,
                 'contract_amount' => $calc['contract_amount'],
-                'paid_amount' => $downPayment,
+                'paid_amount' => $upfrontAmount,
                 'outstanding_amount' => $calc['gross_hp_amount'],
                 'returned_amount' => 0,
                 'is_cash_converted' => false,
+                'document_charge_in_capital' => $calc['document_charge_in_capital'],
+                'first_installment_collected' => $firstInstallment,
                 'status' => 'active',
                 'BC' => $user->BC,
                 'UID' => $user->username,
@@ -273,12 +315,13 @@ class HPService
                     $user
                 );
             }
-            if ($downPayment > 0) {
+            if ($upfrontAmount > 0) {
+                // Down payment plus any document charge kept out of capital.
                 $this->recordCustomerLedger(
                     $invoiceNo.'-DP',
                     $customer->Code,
                     0,
-                    $downPayment,
+                    $upfrontAmount,
                     'HP_DOWN_PAYMENT',
                     $data['invoice_date'],
                     $user
@@ -288,12 +331,13 @@ class HPService
                 'HP_DOWN_PAYMENT',
                 $invoiceNo.'-DP',
                 $data['invoice_date'],
-                $tenderAmount,
+                $upfrontTender,
                 $data['down_payment_method'] ?? 'cash',
                 AccountingService::HP_RECEIVABLE,
                 $user
             );
 
+            // One cheque covers everything collected at sale, including the 1st installment.
             if (($data['down_payment_method'] ?? 'cash') === 'cheque' && $tenderAmount > 0) {
                 $this->createCustomerCheque(
                     $invoiceNo.'-DP',
@@ -314,6 +358,24 @@ class HPService
                 $data['invoice_date'],
                 $user
             );
+
+            if ($firstInstallment > 0) {
+                $firstRow = TInstalment::query()
+                    ->where('invoice_no', $invoiceNo)
+                    ->where('BC', $user->BC)
+                    ->orderBy('instalment_no')
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $this->applyInstallmentPayment($agreement, $firstRow, [
+                    'amount' => $firstInstallment,
+                    'discount' => 0,
+                    'payment_date' => $data['invoice_date'],
+                    'payment_method' => $data['down_payment_method'] ?? 'cash',
+                    'bank_detail_id' => $data['bank_detail_id'] ?? null,
+                    'waive_penalty' => true,
+                    'note' => '1st installment collected at sale.',
+                ], $user, false);
+            }
 
             return $this->loadAgreement($agreement->id, $user->BC);
         });
@@ -580,171 +642,187 @@ class HPService
                 throw ValidationException::withMessages(['amount' => 'Payment or discount must be greater than zero.']);
             }
 
-            $targets = TInstalment::query()
-                ->where('invoice_no', $agreement->invoice_no)
-                ->where('id', '>=', $first->id)
-                ->whereIn('status', ['pending', 'partial'])
-                ->orderBy('instalment_no')
-                ->lockForUpdate()
-                ->get();
-            $remaining = $amount;
-            $remainingDiscount = $discount;
-            $paymentNumbers = [];
-            $collectionNo = $this->nextNumber('HPCOL', $user->BC, THpInstallmentPayment::class, 'collection_no');
-
-            foreach ($targets as $target) {
-                if ($remaining <= 0.009 && $remainingDiscount <= 0.009) {
-                    break;
-                }
-
-                $penalty = ($data['waive_penalty'] ?? false)
-                    ? ['penalty_amount' => 0.0, 'penalty_total_amount' => (float) $target->balance_amount]
-                    : $this->calculatePenalty(
-                        (float) $target->balance_amount,
-                        $target->instalment_date->format('Y-m-d'),
-                        (float) $agreement->schema->PanaltyCharage,
-                        (int) $agreement->schema->GracePeriodDays,
-                        $data['payment_date']
-                    );
-
-                $penaltyApplied = min($remaining, (float) $penalty['penalty_amount']);
-                $remaining -= $penaltyApplied;
-                $principalApplied = min($remaining, (float) $target->balance_amount);
-                $remaining -= $principalApplied;
-                $discountApplied = min($remainingDiscount, max(0, (float) $target->balance_amount - $principalApplied));
-                $remainingDiscount -= $discountApplied;
-
-                if ($penaltyApplied + $principalApplied + $discountApplied <= 0.009) {
-                    continue;
-                }
-
-                $paymentNo = $this->nextNumber('HPP', $user->BC, THpInstallmentPayment::class, 'payment_no');
-                $paymentNumbers[] = $paymentNo;
-                THpInstallmentPayment::create([
-                    'payment_no' => $paymentNo,
-                    'collection_no' => $collectionNo,
-                    'instalment_id' => $target->id,
-                    'invoice_no' => $agreement->invoice_no,
-                    'payment_date' => $data['payment_date'],
-                    'principal_amount' => $principalApplied,
-                    'penalty_amount' => $penaltyApplied,
-                    'discount_amount' => $discountApplied,
-                    'total_amount' => $principalApplied + $penaltyApplied,
-                    'payment_method' => $data['payment_method'],
-                    'bank_detail_id' => $data['bank_detail_id'] ?? null,
-                    'note' => $data['note'] ?? null,
-                    'status' => 'posted',
-                    'BC' => $user->BC,
-                    'UID' => $user->username,
-                ]);
-
-                $newBalance = round((float) $target->balance_amount - $principalApplied - $discountApplied, 2);
-                $target->update([
-                    'amount_pay' => round((float) $target->amount_pay + $principalApplied, 2),
-                    'balance_amount' => $newBalance,
-                    'up_date' => $data['payment_date'],
-                    'cash_payment' => round((float) $target->cash_payment + ($data['payment_method'] === 'cash' ? $principalApplied + $penaltyApplied : 0), 2),
-                    'card_payment' => round((float) $target->card_payment + ($data['payment_method'] === 'card' ? $principalApplied + $penaltyApplied : 0), 2),
-                    'cheque_payment' => round((float) $target->cheque_payment + ($data['payment_method'] === 'cheque' ? $principalApplied + $penaltyApplied : 0), 2),
-                    'bank_transfer' => round((float) $target->bank_transfer + ($data['payment_method'] === 'bank_transfer' ? $principalApplied + $penaltyApplied : 0), 2),
-                    'discount' => round((float) $target->discount + $discountApplied, 2),
-                    'penalty_amount' => round((float) $target->penalty_amount + $penaltyApplied, 2),
-                    'penalty_total_amount' => $penalty['penalty_total_amount'],
-                    'is_waived' => (bool) ($data['waive_penalty'] ?? false),
-                    'status' => $newBalance <= 0.009 ? 'paid' : 'partial',
-                    'last_payment_at' => now(),
-                    'UID' => $user->username,
-                ]);
-
-                $this->postInstallmentJournal(
-                    $paymentNo,
-                    $data['payment_date'],
-                    $principalApplied,
-                    $penaltyApplied,
-                    $discountApplied,
-                    $data['payment_method'],
-                    $user
-                );
-            }
-
-            if ($remaining > 0.009 || $remainingDiscount > 0.009) {
-                throw ValidationException::withMessages([
-                    'amount' => 'Payment and discount exceed the remaining agreement balance.',
-                ]);
-            }
-
-            if ($data['payment_method'] === 'cheque' && $amount > 0) {
-                $this->createCustomerCheque(
-                    $collectionNo,
-                    'HP_INSTALLMENT',
-                    $data['payment_date'],
-                    $amount,
-                    $data['cheque'] ?? [],
-                    $user
-                );
-            }
-
-            $penaltyCollected = round(
-                (float) THpInstallmentPayment::query()
-                    ->where('collection_no', $collectionNo)
-                    ->where('BC', $user->BC)
-                    ->sum('penalty_amount'),
-                2
-            );
-            if ($penaltyCollected > 0) {
-                $this->recordCustomerLedger(
-                    $collectionNo.'-PENALTY',
-                    $agreement->customer_code,
-                    $penaltyCollected,
-                    0,
-                    'HP_PENALTY',
-                    $data['payment_date'],
-                    $user
-                );
-            }
-            $this->recordCustomerLedger(
-                $collectionNo,
-                $agreement->customer_code,
-                0,
-                $amount + $discount,
-                'HP_INSTALLMENT',
-                $data['payment_date'],
-                $user
-            );
-
-            $agreement->paid_amount = round((float) $agreement->paid_amount + $amount, 2);
-            $agreement->outstanding_amount = round(
-                (float) $agreement->instalments()->sum('balance_amount'),
-                2
-            );
-            if ((float) $agreement->outstanding_amount <= 0.009) {
-                $from = $agreement->status;
-                $agreement->status = 'completed';
-                $agreement->completed_at = now();
-                $this->recordHistory(
-                    $agreement,
-                    'agreement_completed',
-                    $from,
-                    'completed',
-                    'All installment principal balances were settled.',
-                    $data['payment_date'],
-                    $user
-                );
-            } else {
-                $this->recordHistory(
-                    $agreement,
-                    'installment_payment',
-                    'active',
-                    'active',
-                    'Installment payment recorded: '.implode(', ', $paymentNumbers),
-                    $data['payment_date'],
-                    $user
-                );
-            }
-            $agreement->save();
+            $this->applyInstallmentPayment($agreement, $first, $data, $user);
 
             return $this->loadAgreement($agreement->id, $user->BC);
         });
+    }
+
+    /**
+     * Apply a collection to the agreement's open installments, starting at $first.
+     * Callers lock the rows and validate the payment method beforehand.
+     */
+    private function applyInstallmentPayment(
+        THirePurchaseSum $agreement,
+        TInstalment $first,
+        array $data,
+        User $user,
+        bool $recordCheque = true
+    ): void {
+        $amount = round((float) $data['amount'], 2);
+        $discount = round((float) ($data['discount'] ?? 0), 2);
+        $targets = TInstalment::query()
+            ->where('invoice_no', $agreement->invoice_no)
+            ->where('id', '>=', $first->id)
+            ->whereIn('status', ['pending', 'partial'])
+            ->orderBy('instalment_no')
+            ->lockForUpdate()
+            ->get();
+        $remaining = $amount;
+        $remainingDiscount = $discount;
+        $paymentNumbers = [];
+        $collectionNo = $this->nextNumber('HPCOL', $user->BC, THpInstallmentPayment::class, 'collection_no');
+
+        foreach ($targets as $target) {
+            if ($remaining <= 0.009 && $remainingDiscount <= 0.009) {
+                break;
+            }
+
+            $penalty = ($data['waive_penalty'] ?? false)
+                ? ['penalty_amount' => 0.0, 'penalty_total_amount' => (float) $target->balance_amount]
+                : $this->calculatePenalty(
+                    (float) $target->balance_amount,
+                    $target->instalment_date->format('Y-m-d'),
+                    (float) $agreement->schema->PanaltyCharage,
+                    (int) $agreement->schema->GracePeriodDays,
+                    $data['payment_date']
+                );
+
+            $penaltyApplied = min($remaining, (float) $penalty['penalty_amount']);
+            $remaining -= $penaltyApplied;
+            $principalApplied = min($remaining, (float) $target->balance_amount);
+            $remaining -= $principalApplied;
+            $discountApplied = min($remainingDiscount, max(0, (float) $target->balance_amount - $principalApplied));
+            $remainingDiscount -= $discountApplied;
+
+            if ($penaltyApplied + $principalApplied + $discountApplied <= 0.009) {
+                continue;
+            }
+
+            $paymentNo = $this->nextNumber('HPP', $user->BC, THpInstallmentPayment::class, 'payment_no');
+            $paymentNumbers[] = $paymentNo;
+            THpInstallmentPayment::create([
+                'payment_no' => $paymentNo,
+                'collection_no' => $collectionNo,
+                'instalment_id' => $target->id,
+                'invoice_no' => $agreement->invoice_no,
+                'payment_date' => $data['payment_date'],
+                'principal_amount' => $principalApplied,
+                'penalty_amount' => $penaltyApplied,
+                'discount_amount' => $discountApplied,
+                'total_amount' => $principalApplied + $penaltyApplied,
+                'payment_method' => $data['payment_method'],
+                'bank_detail_id' => $data['bank_detail_id'] ?? null,
+                'note' => $data['note'] ?? null,
+                'status' => 'posted',
+                'BC' => $user->BC,
+                'UID' => $user->username,
+            ]);
+
+            $newBalance = round((float) $target->balance_amount - $principalApplied - $discountApplied, 2);
+            $target->update([
+                'amount_pay' => round((float) $target->amount_pay + $principalApplied, 2),
+                'balance_amount' => $newBalance,
+                'up_date' => $data['payment_date'],
+                'cash_payment' => round((float) $target->cash_payment + ($data['payment_method'] === 'cash' ? $principalApplied + $penaltyApplied : 0), 2),
+                'card_payment' => round((float) $target->card_payment + ($data['payment_method'] === 'card' ? $principalApplied + $penaltyApplied : 0), 2),
+                'cheque_payment' => round((float) $target->cheque_payment + ($data['payment_method'] === 'cheque' ? $principalApplied + $penaltyApplied : 0), 2),
+                'bank_transfer' => round((float) $target->bank_transfer + ($data['payment_method'] === 'bank_transfer' ? $principalApplied + $penaltyApplied : 0), 2),
+                'discount' => round((float) $target->discount + $discountApplied, 2),
+                'penalty_amount' => round((float) $target->penalty_amount + $penaltyApplied, 2),
+                'penalty_total_amount' => $penalty['penalty_total_amount'],
+                'is_waived' => (bool) ($data['waive_penalty'] ?? false),
+                'status' => $newBalance <= 0.009 ? 'paid' : 'partial',
+                'last_payment_at' => now(),
+                'UID' => $user->username,
+            ]);
+
+            $this->postInstallmentJournal(
+                $paymentNo,
+                $data['payment_date'],
+                $principalApplied,
+                $penaltyApplied,
+                $discountApplied,
+                $data['payment_method'],
+                $user
+            );
+        }
+
+        if ($remaining > 0.009 || $remainingDiscount > 0.009) {
+            throw ValidationException::withMessages([
+                'amount' => 'Payment and discount exceed the remaining agreement balance.',
+            ]);
+        }
+
+        if ($recordCheque && $data['payment_method'] === 'cheque' && $amount > 0) {
+            $this->createCustomerCheque(
+                $collectionNo,
+                'HP_INSTALLMENT',
+                $data['payment_date'],
+                $amount,
+                $data['cheque'] ?? [],
+                $user
+            );
+        }
+
+        $penaltyCollected = round(
+            (float) THpInstallmentPayment::query()
+                ->where('collection_no', $collectionNo)
+                ->where('BC', $user->BC)
+                ->sum('penalty_amount'),
+            2
+        );
+        if ($penaltyCollected > 0) {
+            $this->recordCustomerLedger(
+                $collectionNo.'-PENALTY',
+                $agreement->customer_code,
+                $penaltyCollected,
+                0,
+                'HP_PENALTY',
+                $data['payment_date'],
+                $user
+            );
+        }
+        $this->recordCustomerLedger(
+            $collectionNo,
+            $agreement->customer_code,
+            0,
+            $amount + $discount,
+            'HP_INSTALLMENT',
+            $data['payment_date'],
+            $user
+        );
+
+        $agreement->paid_amount = round((float) $agreement->paid_amount + $amount, 2);
+        $agreement->outstanding_amount = round(
+            (float) $agreement->instalments()->sum('balance_amount'),
+            2
+        );
+        if ((float) $agreement->outstanding_amount <= 0.009) {
+            $from = $agreement->status;
+            $agreement->status = 'completed';
+            $agreement->completed_at = now();
+            $this->recordHistory(
+                $agreement,
+                'agreement_completed',
+                $from,
+                'completed',
+                'All installment principal balances were settled.',
+                $data['payment_date'],
+                $user
+            );
+        } else {
+            $this->recordHistory(
+                $agreement,
+                'installment_payment',
+                'active',
+                'active',
+                'Installment payment recorded: '.implode(', ', $paymentNumbers),
+                $data['payment_date'],
+                $user
+            );
+        }
+        $agreement->save();
     }
 
     public function convertToCash(int $agreementId, array $data, User $user): THirePurchaseSum
