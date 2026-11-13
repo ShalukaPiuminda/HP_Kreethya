@@ -242,6 +242,373 @@ class ReportingService
         ];
     }
 
+    /**
+     * Real transaction rows for the admin app's report drill-down screens,
+     * normalized into the same shape the UI already uses for its table/chart
+     * components: {id, type, title, customer, amount, date, time, status,
+     * employee, paymentMethod, lineItems, notes}. `category` picks the
+     * source: sales, purchases, collections (all payment sources merged),
+     * hp_collections (HP installment payments only), or overdue (unpaid
+     * installments past due, as of today — `to` is ignored for this one).
+     */
+    public function reportRows(User $user, string $category, string $from, string $to): array
+    {
+        return match ($category) {
+            'sales' => $this->salesReportRows($user, $from, $to),
+            'purchases' => $this->purchasesReportRows($user, $from, $to),
+            'collections' => [
+                ...$this->customerPaymentRows($user, $from, $to),
+                ...$this->hpInstallmentPaymentRows($user, $from, $to),
+                ...$this->servicePaymentRows($user, $from, $to),
+            ],
+            'hp_collections' => $this->hpInstallmentPaymentRows($user, $from, $to),
+            'overdue' => $this->overdueReportRows($user, $from, $to),
+            default => [],
+        };
+    }
+
+    /**
+     * Latest N transactions for the Dashboard's "Recent Transactions" list,
+     * across one or all of sales/purchases/collections/hp_collections —
+     * same normalized row shape as `reportRows()`. Each source is queried
+     * with its own `ORDER BY date DESC LIMIT $limit` (not a shared date
+     * range), then merged and re-sorted, so a quiet source doesn't crowd
+     * out an active one before the final trim to `$limit`.
+     */
+    public function recentTransactions(User $user, ?string $type, int $limit): array
+    {
+        $types = ($type && $type !== 'all') ? [$type] : ['sale', 'purchase', 'collection', 'hp_collection'];
+
+        $rows = collect();
+        if (in_array('sale', $types, true)) {
+            $rows = $rows->merge($this->salesReportRows($user, null, null, $limit));
+        }
+        if (in_array('purchase', $types, true)) {
+            $rows = $rows->merge($this->purchasesReportRows($user, null, null, $limit));
+        }
+        if (in_array('collection', $types, true)) {
+            $rows = $rows
+                ->merge($this->customerPaymentRows($user, null, null, $limit))
+                ->merge($this->servicePaymentRows($user, null, null, $limit));
+        }
+        if (in_array('hp_collection', $types, true)) {
+            $rows = $rows->merge($this->hpInstallmentPaymentRows($user, null, null, $limit));
+        }
+
+        $rows = $rows
+            ->sortByDesc(fn ($row) => $row['date'].$row['id'])
+            ->values()
+            ->take($limit)
+            ->all();
+
+        return $this->enrichTransactionRows($user, $rows);
+    }
+
+    public function transactionDetail(User $user, string $type, string $id, ?string $source = null): ?array
+    {
+        $rows = match ($type) {
+            'sale' => $this->salesReportRows($user, null, null, 1, $id),
+            'purchase' => $this->purchasesReportRows($user, null, null, 1, $id),
+            'hp_collection' => $this->hpInstallmentPaymentRows($user, null, null, 1, $id),
+            'collection' => $source === 'service'
+                ? $this->servicePaymentRows($user, null, null, 1, $id)
+                : $this->customerPaymentRows($user, null, null, 1, $id),
+            default => [],
+        };
+        $record = $this->enrichTransactionRows($user, $rows)[0] ?? null;
+        if (!$record) {
+            return null;
+        }
+        $branch = \App\Models\BranchDel::with('company')->where('bccode', $user->BC)->first();
+        $company = $branch?->company;
+        $record['companyName'] = $company?->name;
+        $record['companyAddress'] = $branch?->address ?: $company?->address;
+        $record['companyPhone'] = $branch?->phone ?: $company?->phone;
+        $record['companyEmail'] = $company?->email;
+        $record['branchName'] = $branch?->name;
+        return $record;
+    }
+
+    private function enrichTransactionRows(User $user, array $rows): array
+    {
+        // Fetch detail records in batches, scoped to the signed-in branch.
+        foreach (['sale' => ['t_invoice_sums', 't_invoice_deils'], 'purchase' => ['t_purchases_sums', 't_purchases_details']] as $type => [$summaryTable, $detailTable]) {
+            $ids = collect($rows)->where('type', $type)->pluck('id')->all();
+            if (!$ids) {
+                continue;
+            }
+            $summaries = DB::table($summaryTable)->where('BC', $user->BC)->whereIn('Invoice_no', $ids)->get()->keyBy('Invoice_no');
+            $items = DB::table($detailTable)->where('BC', $user->BC)->whereIn('Invoice_no', $ids)->get()->groupBy('Invoice_no');
+            foreach ($rows as &$row) {
+                if ($row['type'] !== $type) {
+                    continue;
+                }
+                $summary = $summaries->get($row['id']);
+                if (!$summary) {
+                    continue;
+                }
+                $row['subtotal'] = (float) $summary->Gross_Amount;
+                $row['discount'] = (float) $summary->Discount;
+                $row['paidAmount'] = (float) $summary->paid_amount;
+                $row['returnedAmount'] = (float) ($summary->returned_amount ?? 0);
+                $row['balance'] = max(0, round($row['amount'] - $row['returnedAmount'] - $row['paidAmount'], 2));
+                $row['paymentStatus'] = $summary->payment_status;
+                $row['phone'] = $summary->Customer_Phone;
+                $row['address'] = $summary->Customer_Address ?? null;
+                $row['cashPaid'] = (float) ($type === 'sale' ? $summary->Cash_Pay : $summary->cash_payment);
+                $row['employee'] = $summary->UID;
+                $row['lineItems'] = collect($items->get($row['id'], []))->map(fn ($item) => [
+                    'name' => $item->Item_description,
+                    'code' => $item->Item_code,
+                    'qty' => (float) $item->QTY,
+                    'unitPrice' => (float) $item->Unit_price,
+                    'discount' => (float) $item->Discount,
+                    'discountType' => $item->discount_type ?? null,
+                    'discountValue' => isset($item->discount_value) ? (float) $item->discount_value : null,
+                    'total' => (float) $item->Net_value,
+                    'serialNumbers' => json_decode($item->serial_numbers ?? '[]', true) ?: [],
+                ])->values()->all();
+            }
+            unset($row);
+        }
+
+
+        foreach ($rows as &$row) {
+            if ($row['type'] === 'collection' && ($row['source'] ?? null) !== 'service') {
+                $payment = DB::table('t_customer_payments')->where('BC', $user->BC)->where('Payment_no', $row['id'])->first();
+                if (!$payment) continue;
+                $row['notes'] = $payment->Payment_note;
+                $row['phone'] = $payment->Customer_Phone;
+                $row['employee'] = $payment->UID;
+                $row['paymentBreakdown'] = [
+                    'Cash' => (float) $payment->cash_payment,
+                    'Card' => (float) $payment->card_payment,
+                    'Cheque' => (float) $payment->cheque_payment,
+                    'Bank transfer' => (float) $payment->bank_transfer,
+                ];
+                $row['allocations'] = DB::table('t_customer_invoice_payments')->where('BC', $user->BC)->where('payment_no', $row['id'])
+                    ->get()->map(fn ($allocation) => ['invoice' => $allocation->sales_invoice_no, 'amount' => (float) $allocation->amount_allocated])->all();
+                $row['unallocatedAmount'] = round($row['amount'] - array_sum(array_column($row['allocations'], 'amount')), 2);
+            } elseif ($row['type'] === 'hp_collection') {
+                $payment = DB::table('t_hp_installment_payments')->where('BC', $user->BC)->where('payment_no', $row['id'])->first();
+                if (!$payment) continue;
+                $instalment = DB::table('t_instalments')->where('BC', $user->BC)->where('id', $payment->instalment_id)->first();
+                $row['notes'] = $payment->note;
+                $row['employee'] = $payment->UID;
+                $row['invoice'] = $payment->invoice_no;
+                $row['agreement'] = $instalment?->agreement_no;
+                $row['installment'] = $instalment?->instalment_no;
+                $row['principal'] = (float) $payment->principal_amount;
+                $row['penalty'] = (float) $payment->penalty_amount;
+                $row['discount'] = (float) $payment->discount_amount;
+                $row['paymentStatus'] = $payment->status;
+                $row['returnReason'] = $payment->return_reason;
+            } elseif (($row['source'] ?? null) === 'service') {
+                $payment = DB::table('t_service_customer_payments')->where('BC', $user->BC)->where('payment_no', $row['id'])->first();
+                if (!$payment) continue;
+                $row['notes'] = $payment->payment_note;
+                $row['employee'] = $payment->UID;
+                $row['invoice'] = $payment->invoice_no;
+            }
+            if (isset($payment) && in_array($row['type'], ['collection', 'hp_collection'], true)) {
+                $bank = DB::table('bank_details')->where('BC', $user->BC)->where('id', $payment->bank_detail_id)->first();
+                $row['bank'] = $bank?->bank_name;
+                $row['bankAccount'] = $bank?->account_no;
+            }
+            unset($payment);
+        }
+        unset($row);
+        return $rows;
+    }
+
+    private function dominantPaymentMethod(array $amounts): ?string
+    {
+        arsort($amounts);
+        $top = array_key_first($amounts);
+        return ($amounts[$top] ?? 0) > 0 ? $top : null;
+    }
+
+    private function salesReportRows(User $user, ?string $from = null, ?string $to = null, ?int $limit = null, ?string $reference = null): array
+    {
+        return DB::table('t_invoice_sums as s')
+            ->where('s.BC', $user->BC)
+            ->when($reference !== null, fn ($q) => $q->where('s.Invoice_no', $reference))
+            ->when($from && $to, fn ($q) => $q->whereBetween('s.Invoice_date', [$from, $to]))
+            ->orderByDesc('s.Invoice_date')
+            ->when($limit, fn ($q) => $q->limit($limit))
+            ->get(['s.Invoice_no as invoice_no', 's.reference_no', 's.Invoice_date as invoice_date', 's.Customer_Name as customer_name', 's.Net_Amount as net_amount', 's.Cash_Pay as cash_payment', 's.card_payment', 's.Cheque as cheque_payment', 's.bank_transfer'])
+            ->map(fn ($row) => [
+                'id' => $row->invoice_no,
+                'type' => 'sale',
+                'title' => $row->reference_no ?: $row->invoice_no,
+                'customer' => $row->customer_name,
+                'amount' => round((float) $row->net_amount, 2),
+                'date' => $row->invoice_date,
+                'time' => '',
+                'status' => 'completed',
+                'employee' => null,
+                'paymentMethod' => $this->dominantPaymentMethod([
+                    'Cash' => (float) $row->cash_payment,
+                    'Card' => (float) $row->card_payment,
+                    'Cheque' => (float) $row->cheque_payment,
+                    'Bank Transfer' => (float) $row->bank_transfer,
+                ]),
+                'lineItems' => [],
+                'notes' => '',
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function purchasesReportRows(User $user, ?string $from = null, ?string $to = null, ?int $limit = null, ?string $reference = null): array
+    {
+        return DB::table('t_purchases_sums as s')
+            ->where('s.BC', $user->BC)
+            ->when($reference !== null, fn ($q) => $q->where('s.Invoice_no', $reference))
+            ->when($from && $to, fn ($q) => $q->whereBetween('s.Invoice_date', [$from, $to]))
+            ->orderByDesc('s.Invoice_date')
+            ->when($limit, fn ($q) => $q->limit($limit))
+            ->get(['s.Invoice_no as invoice_no', 's.Ref_no as reference_no', 's.Invoice_date as invoice_date', 's.Customer_Name as supplier_name', 's.Net_Amount as net_amount', 's.cash_payment', 's.cheque_payment', 's.credit_payment'])
+            ->map(fn ($row) => [
+                'id' => $row->invoice_no,
+                'type' => 'purchase',
+                'title' => $row->reference_no ?: $row->invoice_no,
+                'customer' => $row->supplier_name,
+                'amount' => round((float) $row->net_amount, 2),
+                'date' => $row->invoice_date,
+                'time' => '',
+                'status' => 'completed',
+                'employee' => null,
+                'paymentMethod' => $this->dominantPaymentMethod([
+                    'Cash' => (float) $row->cash_payment,
+                    'Cheque' => (float) $row->cheque_payment,
+                    'Credit' => (float) $row->credit_payment,
+                ]),
+                'lineItems' => [],
+                'notes' => '',
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function customerPaymentRows(User $user, ?string $from = null, ?string $to = null, ?int $limit = null, ?string $reference = null): array
+    {
+        return DB::table('t_customer_payments')
+            ->where('BC', $user->BC)
+            ->when($reference !== null, fn ($q) => $q->where('Payment_no', $reference))
+            ->when($from && $to, fn ($q) => $q->whereBetween('Payment_date', [$from, $to]))
+            ->orderByDesc('Payment_date')
+            ->when($limit, fn ($q) => $q->limit($limit))
+            ->get(['Payment_no', 'Payment_date', 'Customer_Name', 'Payment_Amount', 'cash_payment', 'card_payment', 'cheque_payment', 'bank_transfer'])
+            ->map(fn ($row) => [
+                'id' => $row->Payment_no,
+                'type' => 'collection',
+                'source' => 'customer',
+                'title' => 'Customer Payment',
+                'customer' => $row->Customer_Name,
+                'amount' => round((float) $row->Payment_Amount, 2),
+                'date' => $row->Payment_date,
+                'time' => '',
+                'status' => 'completed',
+                'employee' => null,
+                'paymentMethod' => $this->dominantPaymentMethod([
+                    'Cash' => (float) $row->cash_payment,
+                    'Card' => (float) $row->card_payment,
+                    'Cheque' => (float) $row->cheque_payment,
+                    'Bank Transfer' => (float) $row->bank_transfer,
+                ]),
+                'lineItems' => [],
+                'notes' => '',
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function hpInstallmentPaymentRows(User $user, ?string $from = null, ?string $to = null, ?int $limit = null, ?string $reference = null): array
+    {
+        return DB::table('t_hp_installment_payments as hip')
+            ->join('t_instalments as i', 'i.id', '=', 'hip.instalment_id')
+            ->where('hip.BC', $user->BC)
+            ->when($reference === null, fn ($q) => $q->where('hip.status', 'posted'))
+            ->when($reference !== null, fn ($q) => $q->where('hip.payment_no', $reference))
+            ->when($from && $to, fn ($q) => $q->whereBetween('hip.payment_date', [$from, $to]))
+            ->orderByDesc('hip.payment_date')
+            ->when($limit, fn ($q) => $q->limit($limit))
+            ->get(['hip.payment_no', 'hip.payment_date', 'hip.total_amount', 'hip.payment_method', 'i.customer_name', 'i.agreement_no', 'i.instalment_no'])
+            ->map(fn ($row) => [
+                'id' => $row->payment_no,
+                'type' => 'hp_collection',
+                'title' => "Installment #{$row->instalment_no} · {$row->agreement_no}",
+                'customer' => $row->customer_name,
+                'amount' => round((float) $row->total_amount, 2),
+                'date' => $row->payment_date,
+                'time' => '',
+                'status' => 'completed',
+                'employee' => null,
+                'paymentMethod' => $row->payment_method ? ucfirst($row->payment_method) : null,
+                'lineItems' => [],
+                'notes' => '',
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function servicePaymentRows(User $user, ?string $from = null, ?string $to = null, ?int $limit = null, ?string $reference = null): array
+    {
+        return DB::table('t_service_customer_payments')
+            ->where('BC', $user->BC)
+            ->when($reference !== null, fn ($q) => $q->where('payment_no', $reference))
+            ->when($from && $to, fn ($q) => $q->whereBetween('payment_date', [$from, $to]))
+            ->orderByDesc('payment_date')
+            ->when($limit, fn ($q) => $q->limit($limit))
+            ->get(['payment_no', 'invoice_no', 'payment_date', 'amount', 'payment_method'])
+            ->map(fn ($row) => [
+                'id' => $row->payment_no,
+                'type' => 'collection',
+                'source' => 'service',
+                'title' => 'Service Payment',
+                'customer' => "Service invoice {$row->invoice_no}",
+                'amount' => round((float) $row->amount, 2),
+                'date' => $row->payment_date,
+                'time' => '',
+                'status' => 'completed',
+                'employee' => null,
+                'paymentMethod' => $row->payment_method ? ucfirst($row->payment_method) : null,
+                'lineItems' => [],
+                'notes' => '',
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function overdueReportRows(User $user, string $from, string $to): array
+    {
+        $today = Carbon::today('Asia/Colombo')->format('Y-m-d');
+        return DB::table('t_instalments')
+            ->where('BC', $user->BC)
+            ->whereIn('status', ['pending', 'partial'])
+            ->where('instalment_date', '<', $today)
+            ->whereBetween('instalment_date', [$from, $to])
+            ->orderBy('instalment_date')
+            ->get(['invoice_no', 'agreement_no', 'customer_name', 'instalment_no', 'instalment_date', 'balance_amount'])
+            ->map(fn ($row) => [
+                'id' => "{$row->invoice_no}-{$row->instalment_no}",
+                'type' => 'collection',
+                'title' => "Installment #{$row->instalment_no} · {$row->agreement_no}",
+                'customer' => $row->customer_name,
+                'amount' => round((float) $row->balance_amount, 2),
+                'date' => $row->instalment_date,
+                'time' => '',
+                'status' => 'overdue',
+                'employee' => null,
+                'paymentMethod' => null,
+                'lineItems' => [],
+                'notes' => "Due {$row->instalment_date}",
+            ])
+            ->values()
+            ->all();
+    }
+
     public function trialBalance(User $user, string $to): array
     {
         $accounts = MChartofAccount::query()

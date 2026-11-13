@@ -207,6 +207,23 @@ class ReportingAndDayEndTest extends TestCase
             ],
         ], $this->user);
 
+        $this->getJson('/api/v1/hp-api/recent-transactions?type=sale&limit=1')
+            ->assertOk()
+            ->assertJsonPath('data.rows.0.id', $invoice->Invoice_no)
+            ->assertJsonPath('data.rows.0.lineItems.0.code', $this->batchItem->item_code)
+            ->assertJsonPath('data.rows.0.lineItems.0.serialNumbers.0', 'SALE-SER-001')
+            ->assertJsonPath('data.rows.0.lineItems.0.total', 700)
+            ->assertJsonPath('data.rows.0.paidAmount', 700)
+            ->assertJsonPath('data.rows.0.balance', 0);
+
+        $detailUrl = '/api/v1/hp-api/transaction-detail?type=sale&id='.urlencode($invoice->Invoice_no);
+        $this->getJson($detailUrl)->assertOk()
+            ->assertJsonPath('data.record.lineItems.0.serialNumbers.0', 'SALE-SER-001')
+            ->assertJsonPath('data.record.lineItems.0.total', 700);
+        $this->user->update(['BC' => 'OTHER']);
+        $this->getJson($detailUrl)->assertNotFound();
+        $this->user->update(['BC' => 'HQ']);
+
         $this->getJson('/api/v1/reports/sales?mode=detail&customer_code='.$this->customer->Code)
             ->assertOk()
             ->assertJsonPath('data.mode', 'detail')
@@ -218,5 +235,24 @@ class ReportingAndDayEndTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.account.code', AccountingService::CASH)
             ->assertJsonPath('data.summary.cash_in', 700);
+    }
+
+    public function test_payment_details_include_split_methods_notes_and_unallocated_amount(): void
+    {
+        \App\Models\TCustomerPayment::create([
+            'Payment_no' => 'DETAIL-PAY-1', 'Payment_date' => '2026-07-01',
+            'Customer_NIC' => $this->customer->NIC, 'Customer_Name' => $this->customer->name,
+            'Customer_Phone' => $this->customer->phone, 'Payment_note' => 'Split receipt',
+            'Payment_Amount' => 1000, 'cash_payment' => 400, 'bank_transfer' => 600,
+            'BC' => 'HQ', 'UID' => 'admin',
+        ]);
+        $this->getJson('/api/v1/hp-api/transaction-detail?type=collection&source=customer&id=DETAIL-PAY-1')
+            ->assertOk()
+            ->assertJsonPath('data.record.notes', 'Split receipt')
+            ->assertJsonPath('data.record.paymentBreakdown.Cash', 400)
+            ->assertJsonPath('data.record.paymentBreakdown.Bank transfer', 600)
+            ->assertJsonPath('data.record.unallocatedAmount', 1000)
+            ->assertJsonPath('data.record.phone', $this->customer->phone);
+        $this->getJson('/api/v1/hp-api/transaction-detail?type=collection&source=service&id=DETAIL-PAY-1')->assertNotFound();
     }
 }
