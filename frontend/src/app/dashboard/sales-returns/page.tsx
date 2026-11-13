@@ -80,7 +80,7 @@ export default function SalesReturnsPage() {
     return !term
       || salesReturn.return_no.toLowerCase().includes(term)
       || salesReturn.invoice_no.toLowerCase().includes(term)
-      || salesReturn.customer_nic.toLowerCase().includes(term);
+      || (salesReturn.customer_nic ?? '').toLowerCase().includes(term);
   });
 
   const returnTotal = useMemo(() => {

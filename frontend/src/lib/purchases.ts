@@ -65,7 +65,24 @@ export interface PurchaseReceiptDetail {
   discount_type?: 'amount' | 'percent';
   discount_value?: string | number;
   Net_value: string | number;
+  barcode_printed_at?: string | null;
+  barcode_printed_qty?: number;
+  barcode_print_count?: number;
+  barcode_printed_by?: string | null;
   item?: PurchaseItemOption;
+}
+
+/** A GRN line as listed in Barcode Printing. */
+export interface BarcodePrintLine extends PurchaseReceiptDetail {
+  Invoice_no: string;
+  Invoice_date: string;
+  purchase?: {
+    id: number;
+    Invoice_no: string;
+    Invoice_date: string;
+    supplier_code: string;
+    supplier?: SupplierOption;
+  };
 }
 
 export interface PurchaseReceipt {

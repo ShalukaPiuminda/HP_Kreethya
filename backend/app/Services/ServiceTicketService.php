@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\BankDetail;
 use App\Models\Customer;
 use App\Models\Item;
+use App\Models\SerialWarranty;
 use App\Models\Supplier;
 use App\Models\TServiceCustomerPayment;
 use App\Models\TServiceDispatch;
@@ -14,14 +15,35 @@ use App\Models\TServiceItemTrack;
 use App\Models\TServiceReturn;
 use App\Models\TServiceSupplierPayment;
 use App\Models\User;
+use App\Models\WarrantyClaim;
+use App\Models\WarrantyClaimLog;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ServiceTicketService
 {
-    public function __construct(private readonly AccountingService $accountingService)
+    public function __construct(
+        private readonly AccountingService $accountingService,
+        private readonly WarrantyService $warrantyService
+    ) {
+    }
+
+    /**
+     * Live warranty check for the ticket form: by serial (serialized items) or by
+     * invoice / agreement no (any warranty item). Same payload as the warranty lookup.
+     */
+    public function warrantyCheck(array $filters, string $branchCode): array
     {
+        $units = filled($filters['serial'] ?? null)
+            ? $this->warrantyService->lookup($filters['serial'], $branchCode)
+            : $this->warrantyService->lookupInvoice((string) ($filters['invoice'] ?? ''), $branchCode);
+
+        $itemCode = $filters['item_code'] ?? null;
+
+        return $itemCode
+            ? array_values(array_filter($units, fn (array $unit) => $unit['item_code'] === $itemCode))
+            : $units;
     }
 
     public function tickets(array $filters, string $branchCode)
@@ -97,9 +119,10 @@ class ServiceTicketService
         return [
             'open_tickets' => TServiceReturn::query()
                 ->where('BC', $branchCode)
-                ->where('status', '!=', 'completed')
+                ->whereNotIn('status', ['completed', 'handed_over'])
                 ->count(),
-            'completed_tickets' => (int) ($statusCounts['completed'] ?? 0),
+            'completed_tickets' => (int) ($statusCounts['completed'] ?? 0) + (int) ($statusCounts['handed_over'] ?? 0),
+            'ready_for_handover' => (int) ($statusCounts['completed'] ?? 0),
             'with_supplier' => (int) ($statusCounts['dispatched_to_supplier'] ?? 0),
             'under_repair' => (int) ($statusCounts['under_repair'] ?? 0),
             'customer_outstanding' => (float) $customerOutstanding,
@@ -126,6 +149,24 @@ class ServiceTicketService
                 ]);
             }
 
+            // Warranty repairs start as a warranty claim; only a claim's "Send to Service"
+            // (which passes warranty_claim_id) can open a free warranty ticket.
+            $fromClaim = filled($data['warranty_claim_id'] ?? null);
+            if (($data['is_warranty'] ?? false) && ! $fromClaim) {
+                throw ValidationException::withMessages([
+                    'is_warranty' => 'Warranty repairs must be opened as a Warranty Claim, then sent to Service.',
+                ]);
+            }
+
+            $warranty = ($data['is_warranty'] ?? false)
+                ? $this->resolveWarranty(
+                    $item,
+                    $data['item_serial_no'] ?? null,
+                    $data['serial_warranty_id'] ?? null,
+                    $user->BC
+                )
+                : null;
+
             $ticketNo = $this->nextNumber('SRV', $user->BC, TServiceReturn::class, 'ticket_no');
             $ticket = TServiceReturn::create([
                 'ticket_no' => $ticketNo,
@@ -138,7 +179,11 @@ class ServiceTicketService
                 'item_serial_no' => $data['item_serial_no'] ?? null,
                 'problem_description' => $data['problem_description'],
                 'intake_condition' => $data['intake_condition'] ?? null,
-                'is_warranty' => $data['is_warranty'] ?? false,
+                'is_warranty' => $warranty !== null,
+                'serial_warranty_id' => $warranty?->id,
+                'warranty_expiry' => $warranty?->customer_warranty_expiry,
+                'sale_no' => $warranty?->sale_no,
+                'warranty_claim_id' => $data['warranty_claim_id'] ?? null,
                 'expected_completion_date' => $data['expected_completion_date'] ?? null,
                 'status' => 'received',
                 'BC' => $user->BC,
@@ -148,7 +193,9 @@ class ServiceTicketService
             $this->track(
                 $ticket,
                 'received',
-                'Service item received and intake ticket created.',
+                $warranty
+                    ? 'Service item received under warranty (valid until '.$warranty->customer_warranty_expiry?->format('d M Y').').'
+                    : 'Service item received and intake ticket created.',
                 $user
             );
 
@@ -173,6 +220,11 @@ class ServiceTicketService
                 $ticket->customer_phone = $customer->phone;
             }
 
+            // The unit of a ticket opened from a warranty claim is fixed by that claim.
+            if ($ticket->warranty_claim_id) {
+                unset($data['item_code'], $data['item_serial_no']);
+            }
+
             if (isset($data['item_code'])) {
                 $item = Item::query()
                     ->where('item_code', $data['item_code'])
@@ -186,14 +238,21 @@ class ServiceTicketService
                 $ticket->item_code = $item->item_code;
             }
 
+            // is_warranty is never edited here: it is set only when a warranty claim opens the ticket.
+            if (($data['is_warranty'] ?? false) && ! $ticket->is_warranty) {
+                throw ValidationException::withMessages([
+                    'is_warranty' => 'Warranty repairs must be opened as a Warranty Claim, then sent to Service.',
+                ]);
+            }
+
             $ticket->fill(collect($data)->only([
                 'return_date',
                 'item_serial_no',
                 'problem_description',
                 'intake_condition',
-                'is_warranty',
                 'expected_completion_date',
             ])->all());
+
             $ticket->UID = $user->username;
             $ticket->save();
 
@@ -208,6 +267,7 @@ class ServiceTicketService
         DB::transaction(function () use ($ticket, $user) {
             $ticket = $this->lockTicket($ticket->id, $user);
             $this->assertStatus($ticket, ['received'], 'Only newly received tickets can be deleted.');
+            $this->releaseLinkedClaim($ticket, $user, "Service ticket {$ticket->ticket_no} was deleted.");
             $ticket->delete();
         });
     }
@@ -379,10 +439,12 @@ class ServiceTicketService
                 ->where('ticket_no', $ticket->ticket_no)
                 ->where('BC', $user->BC)
                 ->sum('repair_cost');
-            $serviceCharge = round((float) $data['service_charge'], 2);
-            $netPayable = round($serviceCharge + $supplierCost, 2);
+            // Warranty repairs are free to the customer; the supplier cost stays a company expense.
+            $isWarranty = (bool) $ticket->is_warranty;
+            $serviceCharge = $isWarranty ? 0.0 : round((float) $data['service_charge'], 2);
+            $netPayable = $isWarranty ? 0.0 : round($serviceCharge + $supplierCost, 2);
 
-            if ($netPayable <= 0) {
+            if (! $isWarranty && $netPayable <= 0) {
                 throw ValidationException::withMessages([
                     'service_charge' => 'The service invoice total must be greater than zero.',
                 ]);
@@ -397,8 +459,8 @@ class ServiceTicketService
                 'supplier_repair_cost' => $supplierCost,
                 'net_payable' => $netPayable,
                 'paid_amount' => 0,
-                'payment_status' => 'unpaid',
-                'invoice_note' => $data['invoice_note'] ?? null,
+                'payment_status' => $isWarranty ? 'paid' : 'unpaid',
+                'invoice_note' => $data['invoice_note'] ?? ($isWarranty ? 'Free repair under warranty.' : null),
                 'BC' => $user->BC,
                 'UID' => $user->username,
             ]);
@@ -413,14 +475,20 @@ class ServiceTicketService
                 $user
             );
 
-            $ticket->status = 'invoiced';
+            $ticket->status = $isWarranty ? 'customer_paid' : 'invoiced';
             $ticket->save();
             $this->track(
                 $ticket,
                 'invoiced',
-                "Service invoice {$invoiceNo} created for ".number_format($netPayable, 2).'.',
+                $isWarranty
+                    ? "Warranty invoice {$invoiceNo} issued free of charge (supplier cost ".number_format($supplierCost, 2).' absorbed).'
+                    : "Service invoice {$invoiceNo} created for ".number_format($netPayable, 2).'.',
                 $user
             );
+
+            if ($isWarranty) {
+                $this->completeWhenSettled($ticket, $data['invoice_date'], $user);
+            }
 
             return $this->freshTicket($ticket);
         });
@@ -435,6 +503,11 @@ class ServiceTicketService
                 ['invoiced', 'customer_paid'],
                 'Customer payments require an active service invoice.'
             );
+            if ($ticket->is_warranty) {
+                throw ValidationException::withMessages([
+                    'amount' => 'Warranty repairs are free; no customer payment is taken.',
+                ]);
+            }
             $invoice = TServiceInvoice::query()
                 ->where('ticket_no', $ticket->ticket_no)
                 ->where('BC', $user->BC)
@@ -584,10 +657,194 @@ class ServiceTicketService
             $this->track(
                 $ticket,
                 'completed',
-                'Customer item released and service ticket completed.',
+                'Service work completed and settled. Ready to hand over to the customer.',
                 $user
             );
+            $this->syncLinkedClaim($ticket, $user);
         }
+    }
+
+    /**
+     * A ticket opened from a warranty claim marks that claim repaired when the work is done.
+     */
+    private function syncLinkedClaim(TServiceReturn $ticket, User $user): void
+    {
+        if (! $ticket->warranty_claim_id) {
+            return;
+        }
+
+        $claim = WarrantyClaim::query()
+            ->whereKey($ticket->warranty_claim_id)
+            ->where('BC', $user->BC)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $claim || $claim->status !== 'in_service') {
+            return;
+        }
+
+        $claim->status = 'repaired';
+        $claim->resolution = 'repaired';
+        $claim->UID = $user->username;
+        $claim->save();
+
+        WarrantyClaimLog::create([
+            'warranty_claim_id' => $claim->id,
+            'from_status' => 'in_service',
+            'to_status' => 'repaired',
+            'note' => "Completed by service ticket {$ticket->ticket_no}.",
+            'UID' => $user->username,
+            'created_at' => now(),
+        ]);
+    }
+
+    /**
+     * Puts a claim that was sent to service back to "received" when its ticket goes away.
+     */
+    private function releaseLinkedClaim(TServiceReturn $ticket, User $user, string $note): void
+    {
+        if (! $ticket->warranty_claim_id) {
+            return;
+        }
+
+        $claim = WarrantyClaim::query()
+            ->whereKey($ticket->warranty_claim_id)
+            ->where('BC', $user->BC)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $claim || $claim->status !== 'in_service') {
+            return;
+        }
+
+        $claim->status = 'received';
+        $claim->service_ticket_no = null;
+        $claim->UID = $user->username;
+        $claim->save();
+
+        WarrantyClaimLog::create([
+            'warranty_claim_id' => $claim->id,
+            'from_status' => 'in_service',
+            'to_status' => 'received',
+            'note' => $note,
+            'UID' => $user->username,
+            'created_at' => now(),
+        ]);
+    }
+
+    /**
+     * Removes a ticket that was opened from a claim, while it is still untouched.
+     * Used when the claim is cancelled.
+     */
+    public function deleteClaimTicket(string $ticketNo, User $user): void
+    {
+        $ticket = TServiceReturn::query()
+            ->where('ticket_no', $ticketNo)
+            ->where('BC', $user->BC)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $ticket) {
+            return;
+        }
+
+        if ($ticket->status !== 'received') {
+            throw ValidationException::withMessages([
+                'status' => "Service ticket {$ticketNo} is already in progress; finish or close it there first.",
+            ]);
+        }
+
+        $ticket->delete();
+    }
+
+    public function handover(TServiceReturn $ticket, array $data, User $user): TServiceReturn
+    {
+        return DB::transaction(function () use ($ticket, $data, $user) {
+            $ticket = $this->lockTicket($ticket->id, $user);
+            $this->assertStatus($ticket, ['completed'], 'Only completed tickets can be handed over to the customer.');
+
+            if ($ticket->warranty_claim_id) {
+                $claimNo = WarrantyClaim::query()->whereKey($ticket->warranty_claim_id)->value('claim_no');
+
+                throw ValidationException::withMessages([
+                    'status' => "This is a warranty repair: hand the item over from warranty claim {$claimNo}.",
+                ]);
+            }
+
+            $this->markHandedOver($ticket, $data, $user, "Item handed over to {$data['handed_over_to']}.");
+
+            return $this->freshTicket($ticket);
+        });
+    }
+
+    /**
+     * Closes the service ticket of a warranty claim when the claim is handed over to the
+     * customer (the handover itself is done and recorded on the claim).
+     */
+    public function handoverFromClaim(WarrantyClaim $claim, array $data, User $user): void
+    {
+        $ticket = TServiceReturn::query()
+            ->where('ticket_no', $claim->service_ticket_no)
+            ->where('BC', $user->BC)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $ticket || $ticket->status === 'handed_over') {
+            return;
+        }
+
+        if ($ticket->status !== 'completed') {
+            throw ValidationException::withMessages([
+                'status' => "Service ticket {$ticket->ticket_no} is not completed yet; finish the repair before handing over.",
+            ]);
+        }
+
+        $this->markHandedOver($ticket, $data, $user, "Item handed over to {$data['handed_over_to']} with warranty claim {$claim->claim_no}.");
+    }
+
+    private function markHandedOver(TServiceReturn $ticket, array $data, User $user, string $trackNote): void
+    {
+        $ticket->fill([
+            'status' => 'handed_over',
+            'handed_over_at' => $data['handed_over_at'] ?? now(),
+            'handed_over_to' => trim($data['handed_over_to']),
+            'handed_over_nic' => $data['handed_over_nic'] ?? null,
+            'handover_note' => $data['handover_note'] ?? null,
+            'handed_over_by' => $user->username,
+            'UID' => $user->username,
+        ]);
+        $ticket->save();
+
+        $this->track($ticket, 'handed_over', $trackNote, $user);
+    }
+
+    /**
+     * Warranty record behind a ticket opened from a warranty claim: the claim's own warranty
+     * line, or the unit's serial warranty. Validity was already decided by the claim.
+     */
+    private function resolveWarranty(
+        Item $item,
+        ?string $serialNo,
+        int|string|null $serialWarrantyId,
+        string $branchCode
+    ): SerialWarranty {
+        $warranty = SerialWarranty::query()
+            ->where('BC', $branchCode)
+            ->where('item_code', $item->item_code)
+            ->when(
+                filled($serialWarrantyId),
+                fn ($query) => $query->whereKey($serialWarrantyId),
+                fn ($query) => $query->where('item_serial_no', trim((string) $serialNo))
+            )
+            ->first();
+
+        if (! $warranty) {
+            throw ValidationException::withMessages([
+                'is_warranty' => 'The warranty record of this claim was not found.',
+            ]);
+        }
+
+        return $warranty;
     }
 
     private function optionalBank(array $data, string $branchCode): ?BankDetail
@@ -648,7 +905,14 @@ class ServiceTicketService
             'issues',
             'invoices.payments.bankAccount',
             'tracks',
+            'serialWarranty',
+            'warrantyClaim:id,claim_no,status',
         ];
+    }
+
+    public function relationsForShow(): array
+    {
+        return $this->relations();
     }
 
     private function nextNumber(

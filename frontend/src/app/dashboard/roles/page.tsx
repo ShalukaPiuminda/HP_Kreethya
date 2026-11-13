@@ -120,6 +120,12 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
         coverage: ['Customer master', 'HP customer picks', 'Sales customer picks'],
       },
       {
+        module: 'customer-nic',
+        label: 'Edit NIC (credit / HP customers)',
+        description: 'Change the NIC of a customer who already has credit sales or HP agreements. A reason is required and logged.',
+        coverage: ['Edit permission unlocks the NIC field', 'Customers without credit or HP can be edited with Customers permission'],
+      },
+      {
         module: 'items',
         label: 'Items & Inventory',
         description: 'Item master, stock operations, and batch visibility.',
@@ -246,6 +252,18 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
         label: 'Reminder Letters',
         description: 'Arrears list, reminder letters 1-3 and seizing orders.',
         coverage: ['Arrears list & print (read)', 'Record letters as printed (create)', 'Letter formats, timing, next print dates (update)'],
+      },
+      {
+        module: 'warranty-claims',
+        label: 'Warranty Claims',
+        description: 'Receive warranty claims by serial, send to supplier, repair, replace or reject.',
+        coverage: ['Claims list (read)', 'New claims (create)', 'Status changes & unit replacement (update)'],
+      },
+      {
+        module: 'warranty-lookup',
+        label: 'Serial Lookup',
+        description: 'Look up a serial number for warranty status, sale, supplier and history.',
+        coverage: ['Serial warranty lookup'],
       },
       {
         module: 'service',

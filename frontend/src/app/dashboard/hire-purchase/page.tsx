@@ -69,6 +69,9 @@ import { PHONE_PATTERN, PHONE_TITLE } from '@/lib/phone';
 import { MobileInput } from '@/components/mobile-input';
 import { SearchSelect } from '@/components/search-select';
 import { StockQtyInput } from '@/components/stock-qty-input';
+import { WarrantyLineBadge } from '@/components/warranty-line-badge';
+import { lineWarranties, warrantySummary } from '@/lib/warranty';
+import { nicConfirmMessage, nicError, normalizeNic } from '@/lib/nic';
 import {
   Badge,
   DiscountInput,
@@ -159,6 +162,10 @@ type PersonQuickAddForm = {
   address: string;
 };
 
+// Installments fall on the same day of the month as the agreement date
+// (e.g. Oct 28 -> Nov 28, Dec 28...). The backend clamps 29-31 to short months.
+const dueDayFromDate = (date: string): string => String(Number(date.slice(8, 10)) || 1);
+
 const emptyForm = (): AgreementForm => ({
   invoice_date: today(),
   reference_no: '',
@@ -174,7 +181,7 @@ const emptyForm = (): AgreementForm => ({
   transport: '0',
   discount: '0',
   discount_type: 'amount',
-  instalment_due_date: '1',
+  instalment_due_date: dueDayFromDate(today()),
   cheque_bank_id: '',
   cheque_bank_branch_id: '',
   cheque_no: '',
@@ -739,14 +746,23 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
     event.preventDefault();
     if (!quickAddTarget) return;
 
-    setQuickAddSaving(true);
     setError(null);
+
+    const nic = normalizeNic(quickAddForm.NIC);
+    const invalidNic = nicError(nic);
+    if (invalidNic) {
+      setError(invalidNic);
+      return;
+    }
+    if (!window.confirm(nicConfirmMessage(nic))) return;
+
+    setQuickAddSaving(true);
 
     try {
       const endpoint = quickAddTarget === 'customer' ? '/v1/customers' : '/v1/guarantors';
       const response = await api.post(endpoint, {
         name: quickAddForm.name.trim(),
-        NIC: quickAddForm.NIC.trim(),
+        NIC: nic,
         phone: quickAddForm.phone.trim() || null,
         address: quickAddForm.address.trim() || null,
       });
@@ -858,7 +874,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
             <Field label="Agreement Date" required className="xl:col-span-2">
               <IconSlot icon={CalendarDays}>
-                <input type="date" value={form.invoice_date} onChange={(event) => setForm({ ...form, invoice_date: event.target.value })} className={iconInputClass} required />
+                <input type="date" value={form.invoice_date} onChange={(event) => setForm({ ...form, invoice_date: event.target.value, instalment_due_date: dueDayFromDate(event.target.value) })} className={iconInputClass} required />
               </IconSlot>
             </Field>
             <Field label="Reference" className="xl:col-span-2">
@@ -918,9 +934,9 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
                 <SearchSelect value={form.schema_type} onChange={(value) => setForm({ ...form, schema_type: value })} options={options.schemas.map((schema) => ({ value: schema.SchemaType, label: schema.SchemaType, description: `${schema.NoOfInstallment} months` }))} placeholder="Select scheme" searchPlaceholder="Search schemes..." className={iconInputClass} required />
               </IconSlot>
             </Field>
-            <Field label="Installment Due Day" required hint="1 – 28" className="xl:col-span-2">
+            <Field label="Installment Due Day" required hint="Same day as agreement date" className="xl:col-span-2">
               <IconSlot icon={CalendarClock}>
-                <input type="number" min="1" max="28" value={form.instalment_due_date} onChange={(event) => setForm({ ...form, instalment_due_date: event.target.value })} className={`${iconInputClass} tabular-nums`} required />
+                <input type="number" min="1" max="31" value={form.instalment_due_date} onChange={(event) => setForm({ ...form, instalment_due_date: event.target.value })} className={`${iconInputClass} tabular-nums`} required />
               </IconSlot>
             </Field>
           </div>
@@ -1075,6 +1091,7 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
                         </Badge>
                       )}
                       {item.is_serialized && <Badge icon={Barcode} tone="indigo">Serialized item</Badge>}
+                      <WarrantyLineBadge item={item} saleDate={form.invoice_date} />
                     </div>
                   )}
 
@@ -1245,11 +1262,16 @@ function AgreementModal({ options, onClose, onCreated }: { options: HpOptions; o
         width="max-w-2xl"
       >
         <form onSubmit={savePersonQuickAdd} className="grid gap-4 p-6 sm:grid-cols-2">
+          {error && (
+            <div className="sm:col-span-2">
+              <OperationNotice type="error">{error}</OperationNotice>
+            </div>
+          )}
           <OperationField label="Name" required>
             <input value={quickAddForm.name} onChange={(event) => setQuickAddForm((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" placeholder="Full name" required />
           </OperationField>
           <OperationField label="NIC" required>
-            <input value={quickAddForm.NIC} onChange={(event) => setQuickAddForm((current) => ({ ...current, NIC: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" minLength={9} maxLength={15} placeholder="National identity number" required />
+            <input value={quickAddForm.NIC} onChange={(event) => setQuickAddForm((current) => ({ ...current, NIC: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5" maxLength={15} placeholder="901234567V or 199012304567" required />
           </OperationField>
           <OperationField label={quickAddTarget === 'customer' ? 'Mobile number' : 'Phone'}>
             {quickAddTarget === 'customer' ? (
@@ -1277,7 +1299,7 @@ function AgreementDetail({ agreement, canUpdate, onClose, onAction }: { agreemen
       <div className="space-y-6 p-6">
         <div className="flex flex-wrap items-center justify-between gap-3"><StatusPill status={agreement.status} />{agreement.is_opening && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Opening HP</span>}<div className="flex flex-wrap gap-2"><Link href={`/dashboard/hire-purchase/${agreement.id}/print/agreement`} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700"><Printer className="h-4 w-4" /> Agreement</Link><Link href={`/dashboard/hire-purchase/${agreement.id}/print/downpayment`} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700"><Printer className="h-4 w-4" /> Down payment</Link><Link href={`/dashboard/hire-purchase/${agreement.id}/print/invoice`} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700"><Printer className="h-4 w-4" /> Invoice</Link><Link href={`/dashboard/hire-purchase/${agreement.id}/delivery-order`} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700"><Truck className="h-4 w-4" /> Delivery Order</Link>{canUpdate && agreement.status === 'active' && <><button onClick={() => onAction('convert')} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"><ArrowRightLeft className="h-4 w-4" /> Pay at once</button><button onClick={() => onAction('return')} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700"><RotateCcw className="h-4 w-4" /> Return agreement</button></>}</div></div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><OperationMetric label="Contract" value={money(agreement.contract_amount)} /><OperationMetric label="Advance used" value={money(agreement.advance_applied)} tone="emerald" /><OperationMetric label="Down-payment due" value={money(agreement.down_payment_outstanding)} tone={Number(agreement.down_payment_outstanding) ? 'rose' : 'slate'} /><OperationMetric label="Installment outstanding" value={money(agreement.outstanding_amount)} tone="amber" /><OperationMetric label="Monthly target" value={money(agreement.instalment)} tone="indigo" /></div>
-        <section><h3 className="mb-3 font-bold text-slate-900">Items</h3><div className="overflow-hidden rounded-xl border border-slate-200"><table className="w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Item</th><th className="px-4 py-3">Batch</th><th className="px-4 py-3">Qty</th><th className="px-4 py-3">Value</th></tr></thead><tbody className="divide-y divide-slate-100">{agreement.details.map((detail) => <tr key={detail.id}><td className="px-4 py-3"><div className="font-medium">{detail.item_code}</div><div className="text-xs text-slate-500">{detail.item_description}</div></td><td className="px-4 py-3">{detail.batch_no || '—'}</td><td className="px-4 py-3">{detail.qty}</td><td className="px-4 py-3">{money(detail.net_value)}</td></tr>)}</tbody></table></div></section>
+        <section><h3 className="mb-3 font-bold text-slate-900">Items</h3><div className="overflow-hidden rounded-xl border border-slate-200"><table className="w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Item</th><th className="px-4 py-3">Batch</th><th className="px-4 py-3">Qty</th><th className="px-4 py-3">Value</th></tr></thead><tbody className="divide-y divide-slate-100">{agreement.details.map((detail) => <tr key={detail.id}><td className="px-4 py-3"><div className="font-medium">{detail.item_code}</div><div className="text-xs text-slate-500">{detail.item_description}</div>{(() => { const text = warrantySummary(lineWarranties(agreement.warranties, detail.item_code, detail.serial_numbers, detail.batch_no)); return text ? <div className={`mt-0.5 text-xs font-semibold ${text === 'Warranty cancelled' ? 'text-rose-600' : 'text-emerald-700'}`}>{text}</div> : null; })()}</td><td className="px-4 py-3">{detail.batch_no || '—'}</td><td className="px-4 py-3">{detail.qty}</td><td className="px-4 py-3">{money(detail.net_value)}</td></tr>)}</tbody></table></div></section>
         <section><h3 className="mb-3 font-bold text-slate-900">Repayment schedule</h3><div className="content-scrollbar max-h-80 overflow-auto rounded-xl border border-slate-200"><table className="w-full text-sm"><thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">No.</th><th className="px-4 py-3">Due</th><th className="px-4 py-3">Target</th><th className="px-4 py-3">Balance</th><th className="px-4 py-3">Status</th></tr></thead><tbody className="divide-y divide-slate-100">{agreement.instalments.map((installment) => <tr key={installment.id}><td className="px-4 py-3">#{installment.instalment_no}</td><td className="px-4 py-3">{shortDate(installment.instalment_date)}</td><td className="px-4 py-3">{money(installment.base_amount)}</td><td className="px-4 py-3 font-semibold">{money(installment.balance_amount)}</td><td className="px-4 py-3"><StatusPill status={installment.status} /></td></tr>)}</tbody></table></div></section>
         <section><h3 className="mb-3 font-bold text-slate-900">Agreement timeline</h3><div className="space-y-3">{agreement.histories.map((history) => <div key={history.id} className="flex gap-3 rounded-xl border border-slate-200 p-4"><span className="mt-1 h-2.5 w-2.5 rounded-full bg-indigo-500" /><div><div className="text-sm font-semibold capitalize text-slate-900">{history.event.replaceAll('_', ' ')}</div><div className="text-xs text-slate-500">{shortDate(history.event_date)} · {history.UID}</div>{history.description && <p className="mt-1 text-sm text-slate-600">{history.description}</p>}</div></div>)}</div></section>
       </div>

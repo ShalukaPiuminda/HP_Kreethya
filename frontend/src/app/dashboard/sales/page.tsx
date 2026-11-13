@@ -59,6 +59,7 @@ import {
   Salesperson,
 } from '@/lib/sales';
 import { ChequeEntryFields } from '@/components/cheque-entry-fields';
+import { CustomerAccountSummary } from '@/components/customer-account-summary';
 import type {
   ChequeBank,
   PaymentBankAccount,
@@ -68,7 +69,9 @@ import { MobileInput } from '@/components/mobile-input';
 import { SearchSelect } from '@/components/search-select';
 import { ScanInput } from '@/components/scan-input';
 import { StockQtyInput } from '@/components/stock-qty-input';
+import { WarrantyLineBadge } from '@/components/warranty-line-badge';
 import { findItemByScan } from '@/lib/barcode';
+import { NO_NIC_CONFIRM, nicConfirmMessage, nicError, normalizeNic } from '@/lib/nic';
 import {
   Badge,
   DiscountInput,
@@ -442,6 +445,8 @@ function openPendingPrintWindow() {
   return popup;
 }
 
+const INVOICES_PER_PAGE = 25;
+
 export default function SalesPage() {
   const { hasPermission } = useAuth();
   const canRead = hasPermission('sales', 'can_read');
@@ -459,8 +464,16 @@ export default function SalesPage() {
   const [showCustomerQuickAdd, setShowCustomerQuickAdd] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [pagination, setPagination] = useState({ current_page: 1, last_page: 1, per_page: INVOICES_PER_PAGE, total: 0 });
+  const [metrics, setMetrics] = useState({ invoices: 0, sales: 0, received: 0, credit: 0 });
   const [loading, setLoading] = useState(true);
+  const [optionsLoading, setOptionsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [customerSaving, setCustomerSaving] = useState(false);
   const [notice, setNotice] = useState<{
@@ -478,7 +491,7 @@ export default function SalesPage() {
     inventoryRef.current = inventory;
   });
 
-  const loadData = useCallback(async () => {
+  const loadInvoices = useCallback(async () => {
     if (!canRead) {
       setLoading(false);
       return;
@@ -486,22 +499,60 @@ export default function SalesPage() {
 
     setLoading(true);
     try {
+      const query = new URLSearchParams({
+        page: String(currentPage),
+        per_page: String(INVOICES_PER_PAGE),
+      });
+      if (debouncedSearch.trim()) query.set('search', debouncedSearch.trim());
+      if (statusFilter !== 'all') query.set('payment_status', statusFilter);
+      if (dateFrom) query.set('date_from', dateFrom);
+      if (dateTo) query.set('date_to', dateTo);
+
+      const response = await api.get<SalesInvoice[]>(`/v1/sales-invoices?${query.toString()}`);
+      setInvoices(response.data ?? []);
+      setPagination(response.meta ?? {
+        current_page: currentPage,
+        last_page: 1,
+        per_page: INVOICES_PER_PAGE,
+        total: response.data?.length ?? 0,
+      });
+      setMetrics({
+        invoices: response.summary?.invoices ?? 0,
+        sales: response.summary?.sales ?? 0,
+        received: response.summary?.received ?? 0,
+        credit: response.summary?.credit ?? 0,
+      });
+    } catch (error) {
+      setNotice({
+        type: 'error',
+        message: getApiErrorMessage(error, 'Unable to load sales invoices.'),
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [canRead, currentPage, dateFrom, dateTo, debouncedSearch, statusFilter]);
+
+  const loadOptions = useCallback(async () => {
+    if (!canRead) {
+      setOptionsLoading(false);
+      return;
+    }
+
+    setOptionsLoading(true);
+    try {
       const [
-        invoiceResponse,
         customerResponse,
         stockResponse,
         storeResponse,
         salespersonResponse,
         paymentOptionResponse,
       ] = await Promise.all([
-        api.getAll<SalesInvoice>('/v1/sales-invoices'),
         api.getAll<SalesCustomer>('/v1/customers'),
         api.getAll<StockItem>('/v1/stock'),
         api.getAll<Store>('/v1/stores'),
         api.getAll<Salesperson>('/v1/salesmen'),
         api.get<PaymentOptions>('/v1/payment-options'),
       ]);
-      setInvoices(invoiceResponse.data ?? []);
       setCustomers(customerResponse.data ?? []);
       setInventory(stockResponse.data ?? []);
       setStores(storeResponse.data ?? []);
@@ -511,32 +562,36 @@ export default function SalesPage() {
     } catch (error) {
       setNotice({
         type: 'error',
-        message: getApiErrorMessage(error, 'Unable to load sales invoices.'),
+        message: getApiErrorMessage(error, 'Unable to load sales data.'),
       });
     } finally {
-      setLoading(false);
+      setOptionsLoading(false);
     }
   }, [canRead]);
 
   useEffect(() => {
-    const timer = window.setTimeout(loadData, 0);
+    const timer = window.setTimeout(loadOptions, 0);
     return () => window.clearTimeout(timer);
-  }, [loadData]);
+  }, [loadOptions]);
 
-  const filteredInvoices = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return invoices.filter((invoice) => {
-      const matchesStatus =
-        statusFilter === 'all' || invoice.payment_status === statusFilter;
-      const matchesSearch =
-        !term
-        || invoice.Invoice_no.toLowerCase().includes(term)
-        || invoice.reference_no?.toLowerCase().includes(term)
-        || invoice.Customer_Name?.toLowerCase().includes(term)
-        || invoice.Customer_NIC.toLowerCase().includes(term);
-      return matchesStatus && matchesSearch;
-    });
-  }, [invoices, search, statusFilter]);
+  useEffect(() => {
+    const timer = window.setTimeout(loadInvoices, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadInvoices, reloadKey]);
+
+  // Wait for typing to pause before searching on the server.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search);
+      setCurrentPage(1);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const reloadInvoices = (page = currentPage) => {
+    setCurrentPage(page);
+    setReloadKey((key) => key + 1);
+  };
 
   const selectedCustomer = customers.find(
     (customer) => customer.Code === form.customer_code
@@ -594,12 +649,8 @@ export default function SalesPage() {
             ? 'Payments exceed the invoice net amount.'
             : null;
 
-  const metrics = useMemo(() => ({
-    invoices: invoices.length,
-    sales: invoices.reduce((sum, invoice) => sum + numeric(invoice.Net_Amount), 0),
-    received: invoices.reduce((sum, invoice) => sum + numeric(invoice.paid_amount), 0),
-    credit: invoices.reduce((sum, invoice) => sum + numeric(invoice.Credite), 0),
-  }), [invoices]);
+  const firstShown = pagination.total === 0 ? 0 : (pagination.current_page - 1) * pagination.per_page + 1;
+  const lastShown = Math.min(pagination.current_page * pagination.per_page, pagination.total);
 
   if (!canRead) {
     return <OperationNotice type="error">You do not have permission to view sales invoices.</OperationNotice>;
@@ -658,19 +709,29 @@ export default function SalesPage() {
 
   const saveQuickCustomer = async (event: React.FormEvent) => {
     event.preventDefault();
-    setCustomerSaving(true);
     setNotice(null);
+
+    // NIC is optional (cash customers); when entered it must be valid.
+    const nic = normalizeNic(customerQuickAdd.NIC);
+    const invalidNic = nic === '' ? null : nicError(nic);
+    if (invalidNic) {
+      setNotice({ type: 'error', message: invalidNic });
+      return;
+    }
+    if (!window.confirm(nic === '' ? NO_NIC_CONFIRM : nicConfirmMessage(nic))) return;
+
+    setCustomerSaving(true);
 
     try {
       const response = await api.post<SalesCustomer>('/v1/customers', {
         name: customerQuickAdd.name.trim(),
-        NIC: customerQuickAdd.NIC.trim(),
+        NIC: nic || null,
         phone: customerQuickAdd.phone.trim() || null,
         address: customerQuickAdd.address.trim() || null,
       });
 
       const createdCustomer = response.data;
-      await loadData();
+      await loadOptions();
 
       if (createdCustomer?.Code) {
         setForm((current) => ({
@@ -832,7 +893,8 @@ export default function SalesPage() {
       });
 
       setShowForm(false);
-      await loadData();
+      reloadInvoices(1);
+      await loadOptions();
 
       if (response.data?.id) {
         const printUrl = `/dashboard/sales/${response.data.id}/print`;
@@ -887,7 +949,7 @@ export default function SalesPage() {
 
       {notice && <OperationNotice type={notice.type}>{notice.message}</OperationNotice>}
 
-      {(customers.length === 0 || stores.length === 0 || inventory.length === 0) && !loading && (
+      {(customers.length === 0 || stores.length === 0 || inventory.length === 0) && !optionsLoading && (
         <OperationNotice type="error">
           Customers, stock items, and stores must be ready before creating sales invoices.
         </OperationNotice>
@@ -911,10 +973,30 @@ export default function SalesPage() {
               className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
             />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+              From
+              <input
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(event) => { setDateFrom(event.target.value); setCurrentPage(1); }}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+              To
+              <input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(event) => { setDateTo(event.target.value); setCurrentPage(1); }}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+              />
+            </label>
             <select
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) => { setStatusFilter(event.target.value); setCurrentPage(1); }}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
             >
               <option value="all">All payment statuses</option>
@@ -922,9 +1004,18 @@ export default function SalesPage() {
               <option value="partial">Partial</option>
               <option value="paid">Paid</option>
             </select>
+            {(search || dateFrom || dateTo || statusFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setStatusFilter('all'); setCurrentPage(1); }}
+                className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-500 transition hover:text-indigo-600"
+              >
+                Clear
+              </button>
+            )}
             <button
               type="button"
-              onClick={loadData}
+              onClick={() => { reloadInvoices(); loadOptions(); }}
               className="rounded-xl border border-slate-200 p-2.5 text-slate-500 transition hover:text-indigo-600"
             >
               <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -948,9 +1039,9 @@ export default function SalesPage() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <LoadingTableRow columns={8} label="Loading sales invoices..." />
-              ) : filteredInvoices.length === 0 ? (
+              ) : invoices.length === 0 ? (
                 <tr><td colSpan={8} className="px-5 py-14 text-center text-slate-400">No sales invoices found.</td></tr>
-              ) : filteredInvoices.map((invoice) => (
+              ) : invoices.map((invoice) => (
                 <tr key={invoice.id} className="hover:bg-slate-50/80">
                   <td className="px-5 py-4">
                     <div className="font-mono text-xs font-bold text-indigo-700">{invoice.Invoice_no}</div>
@@ -993,6 +1084,30 @@ export default function SalesPage() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs font-medium text-slate-500">
+            Showing {firstShown}-{lastShown} of {pagination.total.toLocaleString()} invoices · Page {pagination.current_page} of {pagination.last_page}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={loading || pagination.current_page <= 1}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.min(pagination.last_page, page + 1))}
+              disabled={loading || pagination.current_page >= pagination.last_page}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </section>
 
@@ -1067,10 +1182,7 @@ export default function SalesPage() {
                   <span className="inline-flex items-center gap-1.5"><Hash className="h-3.5 w-3.5 text-slate-400" />{selectedCustomer.NIC}</span>
                   {selectedCustomer.phone && <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-slate-400" />{selectedCustomer.phone}</span>}
                   {selectedCustomer.address && <span className="inline-flex min-w-0 items-center gap-1.5"><MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="truncate">{selectedCustomer.address}</span></span>}
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200 sm:ml-auto">
-                    <Wallet className="h-3.5 w-3.5" />
-                    Advance {formatCurrency(numeric(selectedCustomer.advance_balance))}
-                  </span>
+                  <CustomerAccountSummary key={form.customer_code} customerCode={form.customer_code} advance={numeric(selectedCustomer.advance_balance)} />
                 </div>
               )}
             </FormSection>
@@ -1228,6 +1340,7 @@ export default function SalesPage() {
                             </Badge>
                           )}
                           {item.is_serialized && <Badge icon={Barcode} tone="indigo">Serialized item</Badge>}
+                          <WarrantyLineBadge item={item} saleDate={form.invoice_date} />
                         </div>
                       )}
 
@@ -1392,6 +1505,11 @@ export default function SalesPage() {
           width="max-w-2xl"
         >
           <form onSubmit={saveQuickCustomer} className="grid gap-4 p-6 sm:grid-cols-2">
+            {notice?.type === 'error' && (
+              <div className="sm:col-span-2">
+                <OperationNotice type="error">{notice.message}</OperationNotice>
+              </div>
+            )}
             <OperationField label="Customer name" required>
               <input
                 value={customerQuickAdd.name}
@@ -1406,7 +1524,7 @@ export default function SalesPage() {
                 required
               />
             </OperationField>
-            <OperationField label="NIC" required>
+            <OperationField label="NIC (optional for cash sales)">
               <input
                 value={customerQuickAdd.NIC}
                 onChange={(event) =>
@@ -1415,11 +1533,9 @@ export default function SalesPage() {
                     NIC: event.target.value,
                   }))
                 }
-                minLength={9}
                 maxLength={15}
-                placeholder="National identity number"
+                placeholder="901234567V or 199012304567"
                 className={inputClass}
-                required
               />
             </OperationField>
             <OperationField label="Mobile number">
@@ -1453,7 +1569,7 @@ export default function SalesPage() {
                 saving={customerSaving}
                 submitLabel="Create customer"
                 onCancel={() => setShowCustomerQuickAdd(false)}
-                disabled={!customerQuickAdd.name.trim() || customerQuickAdd.NIC.trim().length < 9}
+                disabled={!customerQuickAdd.name.trim()}
               />
             </div>
           </form>

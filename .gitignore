@@ -36,3 +36,6 @@ frontend/AGENTS.md
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local notes containing credentials
+backend/dontknow.txt

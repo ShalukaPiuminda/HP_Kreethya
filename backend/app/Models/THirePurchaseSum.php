@@ -39,6 +39,14 @@ class THirePurchaseSum extends Model
         return $this->hasMany(THirePurchaseDetail::class, 'invoice_no', 'invoice_no');
     }
 
+    public function warranties()
+    {
+        return $this->hasMany(SerialWarranty::class, 'sale_no', 'invoice_no')
+            ->where('sale_type', 'HP')
+            ->orderBy('item_code')
+            ->orderBy('item_serial_no');
+    }
+
     public function instalments()
     {
         return $this->hasMany(TInstalment::class, 'invoice_no', 'invoice_no');

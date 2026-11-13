@@ -126,18 +126,18 @@ export default function DashboardPage() {
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <FinanceCard label="Stock value" value={financeMoney(stockValue)} icon={Package} tone="violet" />
-        <FinanceCard label="Customer receivables" value={financeMoney(overview?.customer_receivables ?? 0)} icon={UsersRound} tone="blue" />
-        <FinanceCard label="Supplier payables" value={financeMoney(overview?.supplier_payables ?? 0)} icon={Truck} tone="amber" />
-        <FinanceCard label="HP outstanding" value={financeMoney(overview?.active_hp_outstanding ?? 0)} icon={ScrollText} tone="emerald" />
+        <FinanceCard href={hasPermission('items', 'can_read') ? '/dashboard/stock' : undefined} label="Stock value" value={financeMoney(stockValue)} icon={Package} tone="violet" />
+        <FinanceCard href={hasPermission('sales', 'can_read') ? '/dashboard/sales' : undefined} label="Customer receivables" value={financeMoney(overview?.customer_receivables ?? 0)} icon={UsersRound} tone="blue" />
+        <FinanceCard href={hasPermission('purchases', 'can_read') ? '/dashboard/purchases' : undefined} label="Supplier payables" value={financeMoney(overview?.supplier_payables ?? 0)} icon={Truck} tone="amber" />
+        <FinanceCard href={hasPermission('hire-purchase', 'can_read') ? '/dashboard/hire-purchase' : undefined} label="HP outstanding" value={financeMoney(overview?.active_hp_outstanding ?? 0)} icon={ScrollText} tone="emerald" />
       </section>
 
       {overview && (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <FinanceCard label="Period sales" value={financeMoney(overview.sales)} icon={ShoppingCart} tone="blue" />
-          <FinanceCard label="Purchases" value={financeMoney(overview.purchases)} icon={Truck} tone="amber" />
-          <FinanceCard label="Collections" value={financeMoney(overview.customer_collections)} icon={BadgeDollarSign} tone="emerald" />
-          <FinanceCard label="Net cash flow" value={financeMoney(overview.net_cash_flow)} icon={CalendarDays} tone={overview.net_cash_flow >= 0 ? 'emerald' : 'amber'} />
+          <FinanceCard href={`/dashboard/reports/sales?from=${from}&to=${to}`} label="Period sales" value={financeMoney(overview.sales)} icon={ShoppingCart} tone="blue" />
+          <FinanceCard href={`/dashboard/reports/grn?from=${from}&to=${to}`} label="Purchases" value={financeMoney(overview.purchases)} icon={Truck} tone="amber" />
+          <FinanceCard href={`/dashboard/reports/overview?from=${from}&to=${to}`} label="Collections" value={financeMoney(overview.customer_collections)} icon={BadgeDollarSign} tone="emerald" />
+          <FinanceCard href={`/dashboard/reports/overview?from=${from}&to=${to}`} label="Net cash flow" value={financeMoney(overview.net_cash_flow)} icon={CalendarDays} tone={overview.net_cash_flow >= 0 ? 'emerald' : 'amber'} />
         </section>
       )}
 
@@ -161,18 +161,19 @@ export default function DashboardPage() {
 }
 
 function FinanceCard({
+  href,
   label,
   value,
   icon: Icon,
   tone,
 }: {
+  href?: string;
   label: string;
   value: string;
   icon: LucideIcon;
   tone: keyof typeof TONES;
 }) {
-  return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  const content = (
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-500">{label}</p>
@@ -182,8 +183,13 @@ function FinanceCard({
           <Icon className="h-5 w-5" />
         </span>
       </div>
-    </article>
   );
+  const className = 'block rounded-2xl border border-slate-200 bg-white p-5 shadow-sm';
+  return href ? (
+    <Link href={href} aria-label={`View ${label.toLowerCase()}`} className={`${className} transition hover:border-indigo-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600`}>
+      {content}
+    </Link>
+  ) : <article className={className}>{content}</article>;
 }
 
 const TONES = {

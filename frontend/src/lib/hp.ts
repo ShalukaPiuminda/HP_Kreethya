@@ -1,11 +1,13 @@
 import type { StockItem, Store } from './inventory';
 import type { ChequeBank } from './payment-options';
+import type { SerialWarranty } from './warranty';
+import { dateInputValue } from './purchases';
 
 export interface HpCustomer {
   id: number;
   Code: string;
   name: string;
-  NIC: string;
+  NIC: string | null;
   phone?: string | null;
   address?: string | null;
   advance_balance: string | number;
@@ -49,6 +51,7 @@ export interface HpOptions {
 export interface HpPayment {
   id: number;
   payment_no: string;
+  collection_no?: string | null;
   payment_date: string;
   principal_amount: string | number;
   penalty_amount: string | number;
@@ -69,6 +72,7 @@ export interface HpInstallment {
   amount_pay: string | number;
   balance_amount: string | number;
   penalty_amount: string | number;
+  discount?: string | number;
   status: string;
   is_waived: boolean;
   payments: HpPayment[];
@@ -87,6 +91,59 @@ export interface HpInstallmentSummary {
   overdue_count: number;
   overdue_amount: number;
   overdue_agreements: number;
+}
+
+/** One row of the collections worklist grouped by agreement. */
+export interface HpCollectionAgreement {
+  id: number;
+  invoice_no: string;
+  agreement_no: string;
+  customer_name: string;
+  customer_nic?: string | null;
+  customer_phone?: string | null;
+  schema_type: string;
+  status: string;
+  instalment_count: number;
+  paid_count: number;
+  outstanding_total: number;
+  arrears_amount: number;
+  arrears_count: number;
+  next_instalment_id: number | null;
+  next_instalment_no: number | null;
+  next_due_date: string | null;
+  next_due_amount: number;
+  days_overdue: number;
+  estimated_penalty: number;
+  payable_now: number;
+}
+
+export interface HpCollectionSummary {
+  count: number;
+  outstanding_total: number;
+  arrears_amount: number;
+  arrears_agreements: number;
+}
+
+export interface HpStatementTotals {
+  instalment_count: number;
+  paid_count: number;
+  schedule_amount: number;
+  paid_principal: number;
+  discount: number;
+  penalty_paid: number;
+  outstanding: number;
+  arrears_amount: number;
+  arrears_count: number;
+  estimated_penalty: number;
+  payable_now: number;
+  next_instalment_id: number | null;
+  next_due_date: string | null;
+  next_due_amount: number;
+}
+
+export interface HpAgreementStatement {
+  agreement: HpAgreement & { schema?: Pick<HpSchema, 'SchemaType' | 'PanaltyCharage' | 'GracePeriodDays'> | null };
+  totals: HpStatementTotals;
 }
 
 export interface HpDetail {
@@ -134,6 +191,7 @@ export interface HpReturn {
 
 export interface HpAgreement {
   id: number;
+  warranties?: SerialWarranty[];
   invoice_no: string;
   agreement_no: string;
   reference_no?: string | null;
@@ -201,7 +259,7 @@ export interface HpCalculation {
   grace_period_days: number;
 }
 
-export const today = () => new Date().toISOString().slice(0, 10);
+export const today = () => dateInputValue();
 
 export function money(value: string | number | null | undefined) {
   return new Intl.NumberFormat('en-LK', {

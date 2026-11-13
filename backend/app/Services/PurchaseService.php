@@ -13,6 +13,7 @@ use App\Models\TSupPurchaseTrance;
 use App\Models\TSupplierInvoicePayment;
 use App\Models\TSupplierPayment;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -23,7 +24,8 @@ class PurchaseService
         private readonly StockService $stockService,
         private readonly AccountingService $accountingService,
         private readonly ChequeEntryService $chequeEntryService,
-        private readonly SerialNumberService $serialNumberService
+        private readonly SerialNumberService $serialNumberService,
+        private readonly WarrantyService $warrantyService
     ) {}
 
     public function createOrder(array $data, User $user): TPurchaseOrderSum
@@ -352,6 +354,16 @@ class PurchaseService
                     ]);
                 }
 
+                $this->warrantyService->recordPurchase(
+                    $invoiceNo,
+                    $data['invoice_date'],
+                    $supplier->Code,
+                    $line['item'],
+                    $line['serial_numbers'],
+                    $user->BC,
+                    $user->username
+                );
+
                 if (
                     $line['item']->is_batch
                     && in_array($line['price_mode'], ['batch', 'average', 'last'], true)
@@ -446,6 +458,8 @@ class PurchaseService
                 ]);
             }
 
+            $oldSerials = $detail->serial_numbers ?? [];
+
             $serials = $this->stockService->replaceReceivedSerials(
                 $receipt->Invoice_no,
                 'GRN',
@@ -459,6 +473,17 @@ class PurchaseService
             $detail->serial_numbers = $serials;
             $detail->UID = $user->username;
             $detail->save();
+
+            $this->warrantyService->replacePurchaseSerials(
+                $receipt->Invoice_no,
+                Carbon::parse($receipt->Invoice_date)->toDateString(),
+                $receipt->supplier_code,
+                $detail->item,
+                $oldSerials,
+                $serials,
+                $user->BC,
+                $user->username
+            );
 
             return $receipt->refresh()->load(['supplier', 'order', 'store', 'details.item']);
         });

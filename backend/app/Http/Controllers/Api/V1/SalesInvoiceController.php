@@ -17,9 +17,8 @@ class SalesInvoiceController extends BaseController
 
     public function index(Request $request)
     {
-        $invoices = TInvoiceSum::query()
+        $filtered = TInvoiceSum::query()
             ->where('BC', $request->user()->BC)
-            ->with(['customer', 'store', 'salesman', 'bankAccount', 'details.item', 'details.returnDetails'])
             ->when($request->query('search'), function ($query, string $search) {
                 $query->where(function ($nested) use ($search) {
                     $nested->where('Invoice_no', 'like', "%{$search}%")
@@ -31,12 +30,27 @@ class SalesInvoiceController extends BaseController
             ->when($request->query('customer_code'), fn ($query, string $customerCode) => $query->where('customer_code', $customerCode))
             ->when($request->query('payment_status'), fn ($query, string $status) => $query->where('payment_status', $status))
             ->when($request->query('date_from'), fn ($query, string $date) => $query->whereDate('Invoice_date', '>=', $date))
-            ->when($request->query('date_to'), fn ($query, string $date) => $query->whereDate('Invoice_date', '<=', $date))
+            ->when($request->query('date_to'), fn ($query, string $date) => $query->whereDate('Invoice_date', '<=', $date));
+
+        $summary = (clone $filtered)
+            ->selectRaw('COUNT(*) as invoices, COALESCE(SUM(Net_Amount), 0) as sales, COALESCE(SUM(paid_amount), 0) as received, COALESCE(SUM(Credite), 0) as credit')
+            ->toBase()
+            ->first();
+
+        $invoices = $filtered
+            ->with(['customer', 'store', 'salesman', 'bankAccount', 'details.item', 'details.returnDetails'])
             ->orderByDesc('Invoice_date')
             ->orderByDesc('id')
             ->paginate(min(max((int) $request->integer('per_page', 25), 1), 100));
 
-        return $this->paginatedResponse($invoices, 'Sales invoices retrieved successfully.');
+        return $this->paginatedResponse($invoices, 'Sales invoices retrieved successfully.', [
+            'summary' => [
+                'invoices' => (int) $summary->invoices,
+                'sales' => round((float) $summary->sales, 2),
+                'received' => round((float) $summary->received, 2),
+                'credit' => round((float) $summary->credit, 2),
+            ],
+        ]);
     }
 
     public function store(Request $request)
@@ -60,6 +74,7 @@ class SalesInvoiceController extends BaseController
                 'salesman',
                 'bankAccount',
                 'details.item',
+                'warranties',
                 'details.returnDetails',
                 'paymentAllocations.payment',
                 'advanceAllocations.advance',
@@ -80,6 +95,7 @@ class SalesInvoiceController extends BaseController
                 'salesman',
                 'bankAccount',
                 'details.item',
+                'warranties',
                 'details.returnDetails',
                 'paymentAllocations.payment',
                 'advanceAllocations.advance',

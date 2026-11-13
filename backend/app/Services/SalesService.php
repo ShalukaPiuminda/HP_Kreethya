@@ -20,13 +20,15 @@ use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use App\Support\Nic;
 
 class SalesService
 {
     public function __construct(
         private readonly StockService $stockService,
         private readonly AccountingService $accountingService,
-        private readonly ChequeEntryService $chequeEntryService
+        private readonly ChequeEntryService $chequeEntryService,
+        private readonly WarrantyService $warrantyService
     ) {}
 
     public function createAdvance(array $data, User $user): TAdvancCusPayment
@@ -47,6 +49,7 @@ class SalesService
             $advance = TAdvancCusPayment::create([
                 'payment_no' => $paymentNo,
                 'payment_date' => $data['payment_date'],
+                'customer_code' => $customer->Code,
                 'customer_nic' => $customer->NIC,
                 'customer_name' => $customer->name,
                 'customer_phone' => $customer->phone,
@@ -260,6 +263,17 @@ class SalesService
             }
 
             $creditAmount = round($netAmount - $paidAmount, 2);
+
+            // Customers may be created without a NIC (cash customers), but
+            // anything left on credit needs a valid NIC.
+            if ($creditAmount > 0.009 && ! Nic::isValid($customer->NIC)) {
+                throw ValidationException::withMessages([
+                    'customer_code' => blank($customer->NIC)
+                        ? "Customer {$customer->Code} has no NIC. Take full payment, or add a valid NIC on the Customers page before a credit sale."
+                        : "Customer {$customer->Code} has an invalid NIC ({$customer->NIC}). Take full payment, or correct the NIC on the Customers page before a credit sale.",
+                ]);
+            }
+
             $paymentStatus = $creditAmount <= 0.009
                 ? 'paid'
                 : ($paidAmount > 0 ? 'partial' : 'unpaid');
@@ -330,6 +344,21 @@ class SalesService
                         "items.{$line['index']}.item_code" => $exception->getMessage(),
                     ]);
                 }
+
+                $this->warrantyService->recordSale(
+                    'SALE',
+                    $invoiceNo,
+                    $data['invoice_date'],
+                    $customer->Code,
+                    $customer->name,
+                    $customer->phone,
+                    $line['item'],
+                    $line['serial_numbers'],
+                    $line['batch_no'],
+                    (int) $line['qty'],
+                    $user->BC,
+                    $user->username
+                );
             }
 
             $this->recordCustomerLedger(
@@ -459,6 +488,7 @@ class SalesService
             $payment = TCustomerPayment::create([
                 'Payment_no' => $paymentNo,
                 'Payment_date' => $data['payment_date'],
+                'customer_code' => $customer->Code,
                 'Customer_NIC' => $customer->NIC,
                 'Customer_Name' => $customer->name,
                 'Customer_Phone' => $customer->phone,
@@ -711,6 +741,16 @@ class SalesService
                         "items.{$line['index']}.invoice_detail_id" => $exception->getMessage(),
                     ]);
                 }
+
+                $this->warrantyService->recordReturn(
+                    $invoice->Invoice_no,
+                    $item,
+                    $detail->batch_no,
+                    (int) $line['qty'],
+                    $line['serial_numbers'],
+                    $user->BC,
+                    $user->username
+                );
             }
 
             $invoice->returned_amount = round((float) $invoice->returned_amount + $returnTotal, 2);
@@ -745,6 +785,7 @@ class SalesService
                     TAdvancCusPayment::create([
                         'payment_no' => $advanceNo,
                         'payment_date' => $data['return_date'],
+                        'customer_code' => $customer->Code,
                         'customer_nic' => $customer->NIC,
                         'customer_name' => $customer->name,
                         'customer_phone' => $customer->phone,
@@ -790,7 +831,7 @@ class SalesService
     ): void {
         $remaining = $amount;
         $advances = TAdvancCusPayment::query()
-            ->where('customer_nic', $customer->NIC)
+            ->where('customer_code', $customer->Code)
             ->where('BC', $user->BC)
             ->where('remaining_amount', '>', 0)
             ->orderBy('payment_date')

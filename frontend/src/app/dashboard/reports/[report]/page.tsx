@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 import { CalendarCheck2, ChartNoAxesCombined, Eye, Filter, PackageSearch } from 'lucide-react';
 import { ReportTable, type ReportColumn } from '@/components/report-table';
 import { ReportBreadcrumb } from '@/components/report-breadcrumb';
@@ -70,11 +70,31 @@ const defaultFilters = (): ReportFilters => ({
 });
 
 export default function BuiltInReportPage() {
+  return <Suspense fallback={null}><BuiltInReportRoute /></Suspense>;
+}
+
+function BuiltInReportRoute() {
+  const params = useParams<{ report: string }>();
+  const searchParams = useSearchParams();
+  const from = searchParams.get('from') ?? '';
+  const to = searchParams.get('to') ?? '';
+  return <BuiltInReportView key={`${params.report}:${from}:${to}`} initialFrom={from} initialTo={to} />;
+}
+
+function BuiltInReportView({ initialFrom, initialTo }: { initialFrom: string; initialTo: string }) {
   const { hasPermission } = useAuth();
   const params = useParams<{ report: string }>();
   const meta = builtInReport(params.report);
   const tab: Tab = meta?.key ?? 'overview';
-  const [filters, setFilters] = useState<ReportFilters>(defaultFilters);
+  const [filters, setFilters] = useState<ReportFilters>(() => {
+    const initial = defaultFilters();
+    const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
+    return {
+      ...initial,
+      from: validDate(initialFrom) ? initialFrom : initial.from,
+      to: validDate(initialTo) ? initialTo : initial.to,
+    };
+  });
   const [options, setOptions] = useState<ReportOptions | null>(null);
 
   const [overview, setOverview] = useState<OverviewReport | null>(null);

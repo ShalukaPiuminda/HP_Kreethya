@@ -84,6 +84,12 @@ class ItemController extends GeneratedCodeCrudController
             'max_sales_price' => ['nullable', 'numeric', 'min:0'],
             'standard_purchase_price' => ['nullable', 'numeric', 'min:0'],
             'standard_sales_price' => ['nullable', 'numeric', 'min:0'],
+            'has_warranty' => ['sometimes', 'boolean'],
+            'warranty_period' => ['nullable', 'integer', 'min:1', 'max:1200'],
+            'warranty_unit' => ['sometimes', Rule::in(['days', 'months', 'years'])],
+            'supplier_warranty_period' => ['nullable', 'integer', 'min:1', 'max:1200'],
+            'supplier_warranty_unit' => ['sometimes', Rule::in(['days', 'months', 'years'])],
+            'warranty_terms' => ['nullable', 'string', 'max:2000'],
         ];
     }
 
@@ -296,6 +302,21 @@ class ItemController extends GeneratedCodeCrudController
                     'max_sales_price' => 'Maximum sales price cannot be less than minimum sales price.',
                 ]);
             }
+        }
+
+        $hasWarranty = array_key_exists('has_warranty', $validated)
+            ? (bool) $validated['has_warranty']
+            : (bool) $model?->getAttribute('has_warranty');
+
+        if (! $hasWarranty) {
+            $validated['has_warranty'] = false;
+            $validated['warranty_period'] = null;
+            $validated['supplier_warranty_period'] = null;
+            $validated['warranty_terms'] = null;
+        } elseif (! ($validated['warranty_period'] ?? $model?->getAttribute('warranty_period'))) {
+            throw ValidationException::withMessages([
+                'warranty_period' => 'Enter the customer warranty period when warranty is included.',
+            ]);
         }
 
         return parent::prepareValidatedData($validated, $model);

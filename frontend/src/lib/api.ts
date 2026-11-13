@@ -13,6 +13,7 @@ interface ApiResponse<T = unknown> {
     per_page: number;
     total: number;
   };
+  summary?: Record<string, number>;
   errors?: Record<string, string[]>;
 }
 

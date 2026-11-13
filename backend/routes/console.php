@@ -6,8 +6,68 @@ use Illuminate\Support\Facades\Schedule;
 use App\Services\Sms\InstallmentReminderService;
 use Database\Seeders\DeveloperUserSeeder;
 use App\Models\CustomReport;
+use App\Models\Customer;
+use App\Services\CustomerSnapshotService;
 use App\Services\ReportDemoDataService;
+use App\Services\WarrantyService;
 use App\Services\Reports\CustomReportFileStore;
+
+Artisan::command('warranty:backfill {--branch=}', function (WarrantyService $service) {
+    $units = $service->backfill($this->option('branch') ? (string) $this->option('branch') : null);
+
+    $this->info("Serial warranties rebuilt from {$units} purchase/sale movement(s).");
+})->purpose('Rebuild per-serial warranty records for items that include warranty.');
+
+Artisan::command('customers:sync-snapshots {--apply : Write the changes (default is a dry run)} {--branch= : Only this branch code} {--customer= : Only this customer code}', function (CustomerSnapshotService $service) {
+    $apply = (bool) $this->option('apply');
+
+    $customers = Customer::query()
+        ->when($this->option('branch'), fn ($query, $branch) => $query->where('BC', $branch))
+        ->when($this->option('customer'), fn ($query, $code) => $query->where('Code', $code))
+        ->orderBy('BC')
+        ->orderBy('Code')
+        ->get();
+
+    $this->line($apply
+        ? '<fg=yellow>APPLY mode: records will be updated and logged in customer_change_logs.</>'
+        : '<fg=cyan>DRY RUN: nothing will be changed. Re-run with --apply to write.</>');
+
+    $rows = [];
+    $customersAffected = 0;
+
+    foreach ($customers as $customer) {
+        $changes = $service->sync(
+            $customer,
+            null,
+            apply: $apply,
+            source: CustomerSnapshotService::SOURCE_SYNC_COMMAND,
+            uid: 'artisan',
+        );
+
+        if ($changes !== []) {
+            $customersAffected++;
+        }
+
+        foreach ($changes as $change) {
+            foreach ($change['new'] as $column => $value) {
+                $rows[] = [$customer->Code, $change['table'], $change['id'], $column, (string) ($change['old'][$column] ?? ''), (string) ($value ?? '')];
+            }
+        }
+    }
+
+    if ($rows === []) {
+        $this->info('All copied customer details already match the customer records. Nothing to do.');
+
+        return;
+    }
+
+    $this->table(['Customer', 'Table', 'Record id', 'Column', 'Old value', 'New value'], $rows);
+    $records = collect($rows)->map(fn ($row) => $row[1].'#'.$row[2])->unique()->count();
+
+    $this->info($apply
+        ? "Updated {$records} record(s) for {$customersAffected} customer(s)."
+        : "{$records} record(s) for {$customersAffected} customer(s) would be updated. Back up the database, then run with --apply.");
+})->purpose('Copy current customer name/NIC/phone/address onto their invoices, HP agreements, payments, etc.');
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

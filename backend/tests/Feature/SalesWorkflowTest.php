@@ -96,6 +96,47 @@ class SalesWorkflowTest extends TestCase
         Sanctum::actingAs($this->user);
     }
 
+    public function test_invoice_list_is_paginated_with_filtered_summary(): void
+    {
+        foreach ([['2026-06-01', 500], ['2026-06-10', 200], ['2026-06-20', 0]] as [$date, $cash]) {
+            $this->postJson('/api/v1/sales-invoices', [
+                'invoice_date' => $date,
+                'customer_code' => $this->customer->Code,
+                'store_id' => $this->store->id,
+                'cash_payment' => $cash,
+                'items' => [
+                    ['item_code' => $this->item->item_code, 'batch_no' => 'SALE-BATCH', 'qty' => 1, 'unit_price' => 1],
+                ],
+            ])->assertCreated();
+        }
+
+        $this->getJson('/api/v1/sales-invoices?per_page=2')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.Invoice_date', '2026-06-20')
+            ->assertJsonPath('meta.total', 3)
+            ->assertJsonPath('meta.last_page', 2)
+            ->assertJsonPath('summary.invoices', 3)
+            ->assertJsonPath('summary.sales', 1500)
+            ->assertJsonPath('summary.received', 700)
+            ->assertJsonPath('summary.credit', 800);
+
+        $this->getJson('/api/v1/sales-invoices?per_page=2&page=2')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.Invoice_date', '2026-06-01');
+
+        $this->getJson('/api/v1/sales-invoices?date_from=2026-06-05&date_to=2026-06-30')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 2)
+            ->assertJsonPath('summary.sales', 1000);
+
+        $this->getJson('/api/v1/sales-invoices?payment_status=unpaid')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('summary.credit', 500);
+    }
+
     public function test_advance_is_partially_carried_into_credit_sale_and_stock_is_dispatched(): void
     {
         $advance = $this->postJson('/api/v1/customer-advances', [

@@ -1,4 +1,5 @@
-import { numeric, type PurchaseReceipt } from './purchases';
+import { api } from './api';
+import { numeric, type BarcodePrintLine, type PurchaseReceipt } from './purchases';
 
 /** A4 sticker sheet layout, all sizes in mm. */
 export interface LabelSheetPreset {
@@ -59,24 +60,48 @@ export function buildLabels(
 ): BarcodeLabelData[] {
   return receipt.details
     .filter((detail) => selectedDetailIds.has(detail.id))
-    .flatMap((detail): BarcodeLabelData[] => {
-      const base = {
-        itemCode: detail.Item_code,
-        description: detail.Item_description || detail.item?.item_description || detail.Item_code,
-        batchNo: detail.batch_no || null,
-        price: numeric(detail.Sales_price) || numeric(detail.item?.standard_sales_price),
-        grnNo: receipt.Invoice_no,
-      };
+    .flatMap((detail) => detailLabels(detail, receipt.Invoice_no, copies));
+}
 
-      if (isSerialDetail(detail)) {
-        return (detail.serial_numbers ?? []).map((serial) => ({ ...base, barcode: serial, serial }));
-      }
+/** Same as buildLabels, for GRN lines picked from any number of GRNs. */
+export function buildLabelsFromLines(
+  lines: BarcodePrintLine[],
+  selectedDetailIds: Set<number>,
+  copies: Record<number, number>
+): BarcodeLabelData[] {
+  return lines
+    .filter((line) => selectedDetailIds.has(line.id))
+    .flatMap((line) => detailLabels(line, line.Invoice_no, copies));
+}
 
-      const count = Math.max(0, Math.floor(copies[detail.id] ?? defaultLabelCount(detail)));
-      const barcode = detail.item?.barcode || detail.Item_code;
+/** Labels one line produces with the given copies; saved as the printed qty when confirmed. */
+export function labelCountFor(detail: ReceiptDetail, copies: Record<number, number>): number {
+  return isSerialDetail(detail)
+    ? detail.serial_numbers?.length ?? 0
+    : Math.max(0, Math.floor(copies[detail.id] ?? defaultLabelCount(detail)));
+}
 
-      return Array.from({ length: count }, () => ({ ...base, barcode, serial: null }));
-    });
+function detailLabels(detail: ReceiptDetail, grnNo: string, copies: Record<number, number>): BarcodeLabelData[] {
+  const base = {
+    itemCode: detail.Item_code,
+    description: detail.Item_description || detail.item?.item_description || detail.Item_code,
+    batchNo: detail.batch_no || null,
+    price: numeric(detail.Sales_price) || numeric(detail.item?.standard_sales_price),
+    grnNo,
+  };
+
+  if (isSerialDetail(detail)) {
+    return (detail.serial_numbers ?? []).map((serial) => ({ ...base, barcode: serial, serial }));
+  }
+
+  const barcode = detail.item?.barcode || detail.Item_code;
+
+  return Array.from({ length: labelCountFor(detail, copies) }, () => ({ ...base, barcode, serial: null }));
+}
+
+/** Records a confirmed print so the lines show as printed in Barcode Printing. */
+export async function markBarcodesPrinted(lines: { detail_id: number; labels: number }[]) {
+  return api.post('/v1/barcode-prints/mark', { lines });
 }
 
 /**

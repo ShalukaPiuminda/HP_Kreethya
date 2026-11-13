@@ -32,6 +32,14 @@ class TInvoiceSum extends Model
         return $this->hasMany(TInvoiceDeil::class, 'Invoice_no', 'Invoice_no');
     }
 
+    public function warranties()
+    {
+        return $this->hasMany(SerialWarranty::class, 'sale_no', 'Invoice_no')
+            ->where('sale_type', 'SALE')
+            ->orderBy('item_code')
+            ->orderBy('item_serial_no');
+    }
+
     public function customer()
     {
         return $this->belongsTo(Customer::class, 'customer_code', 'Code');

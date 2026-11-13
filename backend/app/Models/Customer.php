@@ -8,11 +8,15 @@ use Illuminate\Database\Eloquent\Model;
 class Customer extends Model
 {
     protected $table = 'customers';
-    protected $fillable = ['Code', 'name', 'NIC', 'phone', 'address', 'advance_balance', 'BC', 'UID'];
+    protected $fillable = ['Code', 'name', 'NIC', 'phone', 'address', 'latitude', 'longitude', 'location_note', 'advance_balance', 'BC', 'UID'];
     public $timestamps = false;
 
     protected $casts = [
+        'latitude' => 'decimal:7',
+        'longitude' => 'decimal:7',
         'advance_balance' => 'decimal:2',
+        // Computed by CustomerController::query(): credit sale or HP agreement exists.
+        'nic_locked' => 'boolean',
     ];
 
     /**
@@ -31,11 +35,11 @@ class Customer extends Model
 
     public function advances()
     {
-        return $this->hasMany(TAdvancCusPayment::class, 'customer_nic', 'NIC');
+        return $this->hasMany(TAdvancCusPayment::class, 'customer_code', 'Code');
     }
 
     public function payments()
     {
-        return $this->hasMany(TCustomerPayment::class, 'Customer_NIC', 'NIC');
+        return $this->hasMany(TCustomerPayment::class, 'customer_code', 'Code');
     }
 }

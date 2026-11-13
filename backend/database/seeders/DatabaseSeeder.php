@@ -92,6 +92,8 @@ class DatabaseSeeder extends Seeder
             'reminder-letters',
             'help-desk',
             'stock-adjustments',
+            'warranty-claims',
+            'warranty-lookup',
         ];
 
         foreach ($modules as $module) {

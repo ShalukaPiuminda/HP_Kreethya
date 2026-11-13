@@ -5,19 +5,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { formatCurrency } from '@/lib/inventory';
 import type { PurchaseReceipt } from '@/lib/purchases';
-import { BarcodeSvg } from '@/components/barcode-svg';
+import { BarcodeLabel } from '@/components/barcode-label';
+import { PrintConfirmDialog } from '@/components/print-confirm-dialog';
 import {
   buildLabels,
   DEFAULT_LABEL_PRESET_ID,
   defaultLabelCount,
   isSerialDetail,
   LABEL_SHEET_PRESETS,
+  labelCountFor,
   loadSavedPresetId,
+  markBarcodesPrinted,
   paginateLabels,
   savePresetId,
-  type BarcodeLabelData,
 } from '@/lib/barcode-labels';
 
 export default function GrnBarcodeLabelsPage() {
@@ -32,6 +33,9 @@ export default function GrnBarcodeLabelsPage() {
   const [showPrice, setShowPrice] = useState(true);
   const [showBatch, setShowBatch] = useState(true);
   const hasPrinted = useRef(false);
+  const [confirmingPrint, setConfirmingPrint] = useState(false);
+  const [savingPrint, setSavingPrint] = useState(false);
+  const [printError, setPrintError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(async () => {
@@ -69,10 +73,36 @@ export default function GrnBarcodeLabelsPage() {
     const timer = window.setTimeout(() => {
       window.print();
       hasPrinted.current = true;
+      setConfirmingPrint(true);
     }, 350);
 
     return () => window.clearTimeout(timer);
   }, [labels]);
+
+  const printLabels = () => {
+    window.print();
+    setPrintError(null);
+    setConfirmingPrint(true);
+  };
+
+  const confirmPrinted = async () => {
+    if (!receipt) return;
+    setSavingPrint(true);
+    setPrintError(null);
+    try {
+      await markBarcodesPrinted(
+        receipt.details
+          .filter((detail) => selectedDetailIds.has(detail.id))
+          .map((detail) => ({ detail_id: detail.id, labels: labelCountFor(detail, copies) }))
+          .filter((line) => line.labels > 0)
+      );
+      setConfirmingPrint(false);
+    } catch (markError) {
+      setPrintError(getApiErrorMessage(markError, 'Unable to mark the labels as printed.'));
+    } finally {
+      setSavingPrint(false);
+    }
+  };
 
   const changePreset = (nextId: string) => {
     setPresetId(nextId);
@@ -116,7 +146,7 @@ export default function GrnBarcodeLabelsPage() {
           </Link>
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={printLabels}
             disabled={labels.length === 0}
             className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           >
@@ -240,42 +270,18 @@ export default function GrnBarcodeLabelsPage() {
           </div>
         </section>
       ))}
-    </div>
-  );
-}
 
-function BarcodeLabel({
-  label,
-  compact,
-  showPrice,
-  showBatch,
-}: {
-  label: BarcodeLabelData;
-  compact: boolean;
-  showPrice: boolean;
-  showBatch: boolean;
-}) {
-  return (
-    <div
-      className={`flex min-w-0 flex-col overflow-hidden text-black outline-dashed outline-1 outline-slate-200 print:outline-none ${
-        compact ? 'px-[1.5mm] py-[1mm] text-[6px] leading-tight' : 'px-[2.5mm] py-[2mm] text-[8px] leading-snug'
-      }`}
-    >
-      <div className={`font-bold ${compact ? 'truncate' : 'line-clamp-2'}`}>{label.description}</div>
-      <div className="flex justify-between gap-1 font-mono">
-        <span className="truncate">{label.itemCode}</span>
-        {showBatch && label.batchNo && <span className="truncate">B: {label.batchNo}</span>}
-      </div>
-      <BarcodeSvg value={label.barcode} className={`mt-[0.5mm] w-full ${compact ? 'h-[7mm]' : 'h-[11mm]'} shrink-0`} />
-      <div className="text-center font-mono font-semibold tracking-wide">
-        {label.serial ? `S/N ${label.serial}` : label.barcode}
-      </div>
-      <div className="flex items-end justify-between gap-1">
-        <span className={`truncate text-slate-600 ${compact ? 'text-[5px]' : 'text-[6px]'}`}>{label.grnNo}</span>
-        {showPrice && label.price > 0 && (
-          <span className={`font-black ${compact ? 'text-[8px]' : 'text-[11px]'}`}>{formatCurrency(label.price)}</span>
-        )}
-      </div>
+      {confirmingPrint && (
+        <div className="print:hidden">
+          <PrintConfirmDialog
+            labelCount={labels.length}
+            saving={savingPrint}
+            error={printError}
+            onConfirm={confirmPrinted}
+            onCancel={() => setConfirmingPrint(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }

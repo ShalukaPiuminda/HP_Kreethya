@@ -1,10 +1,11 @@
 import type { PurchaseStore } from './purchases';
+import type { SerialWarranty } from './warranty';
 
 export interface SalesCustomer {
   id: number;
   Code: string;
   name: string;
-  NIC: string;
+  NIC: string | null;
   phone: string | null;
   address: string | null;
   advance_balance: string | number;
@@ -32,6 +33,8 @@ export interface SalesInvoiceDetail {
     item_code: string;
     item_description: string;
     is_serialized: boolean;
+    has_warranty?: boolean;
+    warranty_terms?: string | null;
   };
   return_details?: Array<{
     id: number;
@@ -59,7 +62,7 @@ export interface SalesReturn {
   return_no: string;
   return_date: string;
   invoice_no: string;
-  customer_nic: string;
+  customer_nic: string | null;
   reason_id: number;
   gross_amount: string | number;
   net_amount: string | number;
@@ -74,12 +77,13 @@ export interface SalesReturn {
 
 export interface SalesInvoice {
   id: number;
+  warranties?: SerialWarranty[];
   Invoice_no: string;
   reference_no: string | null;
   Invoice_date: string;
   customer_code: string;
   store_id: number;
-  Customer_NIC: string;
+  Customer_NIC: string | null;
   Customer_Name: string | null;
   Customer_Phone?: string | null;
   Customer_Address?: string | null;
@@ -151,7 +155,7 @@ export interface CustomerPayment {
   id: number;
   Payment_no: string;
   Payment_date: string;
-  Customer_NIC: string;
+  Customer_NIC: string | null;
   Customer_Name: string | null;
   Payment_note: string | null;
   Payment_Amount: string | number;
@@ -180,7 +184,7 @@ export interface CustomerAdvance {
   id: number;
   payment_no: string;
   payment_date: string;
-  customer_nic: string;
+  customer_nic: string | null;
   customer_name: string | null;
   payment_note: string | null;
   amount: string | number;

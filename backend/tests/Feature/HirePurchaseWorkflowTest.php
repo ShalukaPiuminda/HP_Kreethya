@@ -265,6 +265,75 @@ class HirePurchaseWorkflowTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_installments_grouped_by_agreement_with_statement_and_arrears_collection(): void
+    {
+        $created = $this->postJson('/api/v1/hp', [
+            'invoice_date' => '2026-01-01',
+            'customer_code' => $this->customer->Code,
+            'guarantor_1_code' => $this->guarantor->Code,
+            'schema_type' => 'HP-4',
+            'store_id' => $this->store->id,
+            'down_payment' => 20000,
+            'down_payment_method' => 'cash',
+            'instalment_due_date' => 1,
+            'items' => [['item_code' => $this->item->item_code, 'qty' => 1]],
+        ])->assertCreated();
+        $agreementId = $created->json('data.id');
+
+        // Due dates: 2026-02-01, 03-01, 04-01, 05-01. Three are overdue on 2026-04-10.
+        Carbon::setTestNow('2026-04-10 10:00:00');
+
+        $row = $this->getJson('/api/v1/hp/installments/agreements?status=unpaid&search=901111111V')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('summary.count', 1)
+            ->assertJsonPath('summary.arrears_agreements', 1)
+            ->assertJsonPath('data.0.id', $agreementId)
+            ->assertJsonPath('data.0.instalment_count', 4)
+            ->assertJsonPath('data.0.paid_count', 0)
+            ->assertJsonPath('data.0.arrears_count', 3)
+            ->assertJsonPath('data.0.next_due_date', '2026-02-01')
+            ->assertJsonPath('data.0.days_overdue', 68)
+            ->json('data.0');
+        $this->assertEqualsWithDelta((float) $created->json('data.outstanding_amount'), $row['outstanding_total'], 0.01);
+        $this->assertGreaterThan(0, $row['estimated_penalty']);
+        $this->assertEqualsWithDelta($row['arrears_amount'] + $row['estimated_penalty'], $row['payable_now'], 0.01);
+
+        // Aging uses the oldest unpaid installment (68 days), so the agreement sits in one bucket only.
+        $this->getJson('/api/v1/hp/installments/agreements?aging=61-90')->assertOk()->assertJsonPath('meta.total', 1);
+        $this->getJson('/api/v1/hp/installments/agreements?aging=31-60')->assertOk()->assertJsonPath('meta.total', 0);
+        $this->getJson('/api/v1/hp/installments/agreements?view=upcoming')->assertOk()->assertJsonPath('meta.total', 1);
+        $this->getJson('/api/v1/hp/installments/agreements?search=nobody-matches')->assertOk()->assertJsonPath('meta.total', 0);
+        $this->getJson('/api/v1/hp/installments/agreements?sort=arrears_amount&direction=desc')->assertOk();
+        $this->getJson('/api/v1/hp/installments/agreements?sort=bogus')->assertStatus(422);
+
+        $statement = $this->getJson("/api/v1/hp/installments/agreements/{$agreementId}")
+            ->assertOk()
+            ->assertJsonCount(4, 'data.agreement.instalments')
+            ->assertJsonPath('data.totals.instalment_count', 4)
+            ->assertJsonPath('data.totals.arrears_count', 3)
+            ->assertJsonPath('data.agreement.instalments.0.days_overdue', 68)
+            ->assertJsonPath('data.agreement.instalments.3.estimated_penalty', 0)
+            ->json('data.totals');
+        $this->assertEqualsWithDelta($row['payable_now'], $statement['payable_now'], 0.01);
+        $this->assertSame($row['next_instalment_id'], $statement['next_instalment_id']);
+
+        // Payment numbers are sequenced off the DB clock, so stop faking "now" before posting.
+        Carbon::setTestNow();
+
+        // Collecting "payable now" (dated 2026-04-10) from the oldest installment clears exactly the arrears.
+        $this->postJson("/api/v1/installments/{$statement['next_instalment_id']}/pay", [
+            'payment_date' => '2026-04-10',
+            'amount' => $statement['payable_now'],
+            'payment_method' => 'cash',
+        ])->assertOk();
+
+        $this->getJson("/api/v1/hp/installments/agreements/{$agreementId}")
+            ->assertOk()
+            ->assertJsonPath('data.totals.paid_count', 3)
+            ->assertJsonPath('data.totals.next_due_date', '2026-05-01');
+    }
+
     public function test_opening_hire_purchase_imports_existing_installments_without_stock_dispatch(): void
     {
         $response = $this->postJson('/api/v1/hp/opening', [

@@ -11,10 +11,12 @@ import {
   Plus,
   RefreshCcw,
   Search,
+  ShieldCheck,
   Sparkles,
   Trash2,
 } from 'lucide-react';
 import { api, getApiErrorMessage } from '@/lib/api';
+import { formatPeriod } from '@/lib/warranty';
 import {
   LoadingTableRow,
   OperationHeader,
@@ -173,11 +175,8 @@ export default function ItemsPage() {
       ...(makes.length === 0
         ? ['Create at least one make or model before adding items.']
         : []),
-      ...(colors.length === 0
-        ? ['Create at least one color before adding items.']
-        : []),
     ],
-    [brands.length, categories.length, colors.length, makes.length]
+    [brands.length, categories.length, makes.length]
   );
 
   const openCreate = () => {
@@ -412,7 +411,16 @@ export default function ItemsPage() {
                             Serial
                           </span>
                         ) : null}
-                        {!item.is_batch && !item.is_serialized ? (
+                        {item.has_warranty ? (
+                          <span
+                            title={`Customer warranty: ${formatPeriod(item.warranty_period, item.warranty_unit)}`}
+                            className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200"
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            {formatPeriod(item.warranty_period, item.warranty_unit)}
+                          </span>
+                        ) : null}
+                        {!item.is_batch && !item.is_serialized && !item.has_warranty ? (
                           <span className="text-slate-400">—</span>
                         ) : null}
                       </div>

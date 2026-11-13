@@ -1,4 +1,5 @@
 import type { Store } from './inventory';
+import { dateInputValue } from './purchases';
 
 export interface ReportPoint {
   date: string;
@@ -80,7 +81,7 @@ export interface ReportOptionCustomer {
   id: number;
   Code: string;
   name: string;
-  NIC: string;
+  NIC: string | null;
 }
 
 export interface ReportOptionSupplier {
@@ -353,9 +354,9 @@ export interface CashFlowReport {
   rows: CashFlowRow[];
 }
 
-export const reportToday = () => new Date().toISOString().slice(0, 10);
+export const reportToday = () => dateInputValue();
 
 export function monthStart() {
   const date = new Date();
-  return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().slice(0, 10);
+  return dateInputValue(new Date(date.getFullYear(), date.getMonth(), 1));
 }

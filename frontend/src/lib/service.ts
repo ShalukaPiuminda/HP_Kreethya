@@ -1,4 +1,5 @@
 import type { ChequeBankAccount } from './cheques';
+import type { SerialWarranty } from './warranty';
 
 export type ServiceStatus =
   | 'received'
@@ -8,13 +9,14 @@ export type ServiceStatus =
   | 'repaired'
   | 'invoiced'
   | 'customer_paid'
-  | 'completed';
+  | 'completed'
+  | 'handed_over';
 
 export interface ServiceCustomerOption {
   id: number;
   Code: string;
   name: string;
-  NIC: string;
+  NIC: string | null;
   phone?: string | null;
 }
 
@@ -98,7 +100,7 @@ export interface ServiceTicket {
   id: number;
   ticket_no: string;
   return_date: string;
-  customer_nic: string;
+  customer_nic: string | null;
   customer_code?: string | null;
   customer_name: string;
   customer_phone?: string | null;
@@ -107,10 +109,21 @@ export interface ServiceTicket {
   problem_description: string;
   intake_condition?: string | null;
   is_warranty: boolean;
+  serial_warranty_id?: number | null;
+  warranty_expiry?: string | null;
+  sale_no?: string | null;
+  warranty_claim_id?: number | null;
+  serial_warranty?: SerialWarranty | null;
+  warranty_claim?: { id: number; claim_no: string; status: string } | null;
   expected_completion_date?: string | null;
   assigned_technician?: string | null;
   repair_summary?: string | null;
   completed_date?: string | null;
+  handed_over_at?: string | null;
+  handed_over_to?: string | null;
+  handed_over_nic?: string | null;
+  handover_note?: string | null;
+  handed_over_by?: string | null;
   status: ServiceStatus;
   customer?: ServiceCustomerOption | null;
   item?: ServiceItemOption | null;
@@ -130,6 +143,7 @@ export interface ServiceOptions {
 export interface ServiceSummary {
   open_tickets: number;
   completed_tickets: number;
+  ready_for_handover?: number;
   with_supplier: number;
   under_repair: number;
   customer_outstanding: number;

@@ -25,13 +25,15 @@ use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use App\Support\Nic;
 
 class HPService
 {
     public function __construct(
         private readonly StockService $stockService,
         private readonly AccountingService $accountingService,
-        private readonly ChequeEntryService $chequeEntryService
+        private readonly ChequeEntryService $chequeEntryService,
+        private readonly WarrantyService $warrantyService
     ) {}
 
     public function calculate(array $data, string $branchCode): array
@@ -90,6 +92,7 @@ class HPService
                 ->where('BC', $user->BC)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $this->assertCustomerHasValidNic($customer);
             $store = Store::query()
                 ->whereKey($data['store_id'])
                 ->where('BC', $user->BC)
@@ -230,6 +233,21 @@ class HPService
                         "items.{$line['index']}.item_code" => $exception->getMessage(),
                     ]);
                 }
+
+                $this->warrantyService->recordSale(
+                    'HP',
+                    $invoiceNo,
+                    $data['invoice_date'],
+                    $customer->Code,
+                    $customer->name,
+                    $customer->phone,
+                    $line['item'],
+                    $line['serial_numbers'],
+                    $line['batch_no'],
+                    (int) $line['qty'],
+                    $user->BC,
+                    $user->username
+                );
             }
 
             $this->createSchedule($agreement, $calc, $user);
@@ -309,6 +327,7 @@ class HPService
                 ->where('BC', $user->BC)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $this->assertCustomerHasValidNic($customer);
             $store = Store::query()
                 ->whereKey($data['store_id'])
                 ->where('BC', $user->BC)
@@ -907,6 +926,16 @@ class HPService
                     throw ValidationException::withMessages(['items' => $exception->getMessage()]);
                 }
 
+                $this->warrantyService->recordReturn(
+                    $agreement->invoice_no,
+                    $detail->item,
+                    $detail->batch_no,
+                    $qty,
+                    $serialNumbers,
+                    $user->BC,
+                    $user->username
+                );
+
                 THirePurchaseReturnDetail::create([
                     'hpreturn_code' => $returnNo,
                     'item_code' => $detail->item_code,
@@ -1023,6 +1052,7 @@ class HPService
                 'conversions',
                 'returns.details',
                 'advanceAllocations.advance',
+                'warranties',
             ])
             ->firstOrFail();
     }
@@ -1309,7 +1339,7 @@ class HPService
     ): void {
         $remaining = $amount;
         $advances = TAdvancCusPayment::query()
-            ->where('customer_nic', $customer->NIC)
+            ->where('customer_code', $customer->Code)
             ->where('BC', $user->BC)
             ->where('remaining_amount', '>', 0)
             ->orderBy('payment_date')
@@ -1388,6 +1418,21 @@ class HPService
             'BC' => $user->BC,
             'UID' => $user->username,
         ]);
+    }
+
+    /**
+     * HP agreements need a valid NIC: customers may be created without one
+     * (cash customers), but it must be added before an HP agreement.
+     */
+    private function assertCustomerHasValidNic(Customer $customer): void
+    {
+        if (! Nic::isValid($customer->NIC)) {
+            throw ValidationException::withMessages([
+                'customer_code' => blank($customer->NIC)
+                    ? "Customer {$customer->Code} has no NIC. A valid NIC is required for HP agreements: add it on the Customers page first."
+                    : "Customer {$customer->Code} has an invalid NIC ({$customer->NIC}). A valid NIC is required for HP agreements: correct it on the Customers page first.",
+            ]);
+        }
     }
 
     private function nextNumber(

@@ -9,6 +9,7 @@ import {
   BadgeCheck,
   BadgePercent,
   Banknote,
+  Barcode,
   Boxes,
   BriefcaseBusiness,
   Building2,
@@ -41,6 +42,7 @@ import {
   ReceiptText,
   RefreshCcw,
   RotateCcw,
+  ScanSearch,
   ScrollText,
   ShieldCheck,
   ShoppingCart,
@@ -140,6 +142,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Purchase Orders', href: '/dashboard/purchase-orders', icon: ClipboardList, module: 'purchases' },
       { label: 'Purchase Receipts', href: '/dashboard/purchases', icon: PackageCheck, module: 'purchases' },
       { label: 'Supplier Payments', href: '/dashboard/supplier-payments', icon: HandCoins, module: 'purchases' },
+      { label: 'Barcode Printing', href: '/dashboard/barcode-printing', icon: Barcode, module: 'purchases' },
     ],
   },
   {
@@ -158,6 +161,13 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Service',
     items: [
       { label: 'Service Tickets', href: '/dashboard/service', icon: Wrench, module: 'service' },
+    ],
+  },
+  {
+    label: 'Warranty',
+    items: [
+      { label: 'Warranty Claims', href: '/dashboard/warranty-claims', icon: ShieldCheck, module: 'warranty-claims' },
+      { label: 'Serial Lookup', href: '/dashboard/warranty-lookup', icon: ScanSearch, module: 'warranty-lookup' },
     ],
   },
   {
@@ -306,7 +316,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {!collapsed && (
               <span className="min-w-0">
                 <span className="block truncate text-sm font-bold tracking-wide text-slate-950">
-                  Hire Purchase
+                  Stylo-Piyestra
                 </span>
                 <span className="block truncate text-xs text-slate-500">
                   Operations workspace

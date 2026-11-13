@@ -53,7 +53,7 @@ class BaseController extends Controller
      * @param  string  $message
      * @return \Illuminate\Http\JsonResponse
      */
-    protected function paginatedResponse($items, string $message = 'Success'): JsonResponse
+    protected function paginatedResponse($items, string $message = 'Success', array $extra = []): JsonResponse
     {
         return response()->json([
             'success' => true,
@@ -65,6 +65,7 @@ class BaseController extends Controller
                 'per_page' => $items->perPage(),
                 'total' => $items->total(),
             ],
+            ...$extra,
         ]);
     }
 }

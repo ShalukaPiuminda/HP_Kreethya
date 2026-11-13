@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Models\BranchDel;
+use App\Models\Company;
 use App\Models\TServiceReturn;
 use App\Services\ServiceTicketService;
 use Illuminate\Http\Request;
@@ -60,18 +62,68 @@ class ServiceTicketController extends BaseController
         $ticket = TServiceReturn::query()
             ->whereKey($serviceTicket)
             ->where('BC', $request->user()->BC)
-            ->with([
-                'customer',
-                'item',
-                'dispatches.supplier',
-                'dispatches.payments.bankAccount',
-                'issues',
-                'invoices.payments.bankAccount',
-                'tracks',
-            ])
+            ->with($this->serviceTicketService->relationsForShow())
             ->firstOrFail();
 
         return $this->successResponse($ticket);
+    }
+
+    public function warrantyCheck(Request $request)
+    {
+        $filters = $request->validate([
+            'item_code' => ['nullable', 'string', 'max:50'],
+            'serial' => ['nullable', 'required_without:invoice', 'string', 'max:100'],
+            'invoice' => ['nullable', 'required_without:serial', 'string', 'max:50'],
+        ]);
+
+        return $this->successResponse(
+            $this->serviceTicketService->warrantyCheck($filters, $request->user()->BC),
+            'Warranty check completed.'
+        );
+    }
+
+    public function handover(Request $request, int $serviceTicket)
+    {
+        $validated = $this->validateHandover($request);
+
+        return $this->successResponse(
+            $this->serviceTicketService->handover(
+                $this->branchTicket($request, $serviceTicket),
+                $validated,
+                $request->user()
+            ),
+            'Item handed over to the customer.'
+        );
+    }
+
+    public function printData(Request $request, int $serviceTicket)
+    {
+        $ticket = TServiceReturn::query()
+            ->whereKey($serviceTicket)
+            ->where('BC', $request->user()->BC)
+            ->with($this->serviceTicketService->relationsForShow())
+            ->firstOrFail();
+
+        return $this->successResponse([
+            'ticket' => $ticket,
+            'company' => Company::query()->orderBy('id')->first(),
+            'branch' => BranchDel::query()->where('bccode', $ticket->BC)->first(),
+        ]);
+    }
+
+    public static function handoverRules(): array
+    {
+        return [
+            'handed_over_at' => ['nullable', 'date'],
+            'handed_over_to' => ['required', 'string', 'min:2', 'max:150'],
+            'handed_over_nic' => ['nullable', 'string', 'max:20'],
+            'handover_note' => ['nullable', 'string', 'max:2000'],
+        ];
+    }
+
+    private function validateHandover(Request $request): array
+    {
+        return $request->validate(self::handoverRules());
     }
 
     public function update(Request $request, int $serviceTicket)
@@ -244,6 +296,7 @@ class ServiceTicketController extends BaseController
             'item_serial_no' => ['nullable', 'string', 'max:100'],
             'problem_description' => [$required, 'string', 'max:5000'],
             'intake_condition' => ['nullable', 'string', 'max:3000'],
+            // Only accepted to reject it with a clear message: warranty work starts as a claim.
             'is_warranty' => ['nullable', 'boolean'],
             'expected_completion_date' => ['nullable', 'date', 'after_or_equal:return_date'],
         ]);

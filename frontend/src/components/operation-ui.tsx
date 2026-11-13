@@ -263,15 +263,15 @@ export function OperationActions({
 export function StatusPill({ status }: { status: string }) {
   const normalized = status.toLowerCase();
   const classes =
-    normalized === 'paid' || normalized === 'approved' || normalized === 'passed' || normalized === 'repaired' || normalized === 'completed' || normalized === 'customer_paid' || normalized === 'active' || normalized === 'posted'
+    normalized === 'paid' || normalized === 'approved' || normalized === 'passed' || normalized === 'repaired' || normalized === 'completed' || normalized === 'customer_paid' || normalized === 'active' || normalized === 'posted' || normalized === 'replaced'
       ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
       : normalized === 'partial' || normalized === 'partially_received' || normalized === 'pending' || normalized === 'under_repair'
         ? 'bg-amber-50 text-amber-700 ring-amber-200'
-      : normalized === 'cancelled' || normalized === 'returned' || normalized === 'inactive'
+      : normalized === 'cancelled' || normalized === 'returned' || normalized === 'inactive' || normalized === 'rejected'
           ? 'bg-rose-50 text-rose-700 ring-rose-200'
           : normalized === 'draft' || normalized === 'received' || normalized === 'invoiced' || normalized === 'converted'
             ? 'bg-indigo-50 text-indigo-700 ring-indigo-200'
-            : normalized === 'dispatched_to_supplier' || normalized === 'received_from_supplier'
+            : normalized === 'dispatched_to_supplier' || normalized === 'received_from_supplier' || normalized === 'sent_to_supplier' || normalized === 'returned_from_supplier' || normalized === 'in_service'
               ? 'bg-violet-50 text-violet-700 ring-violet-200'
             : 'bg-slate-100 text-slate-600 ring-slate-200';
 
