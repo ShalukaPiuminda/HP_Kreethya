@@ -16,7 +16,7 @@ export interface ServiceCustomerOption {
   id: number;
   Code: string;
   name: string;
-  NIC: string;
+  NIC: string | null;
   phone?: string | null;
 }
 
@@ -100,7 +100,7 @@ export interface ServiceTicket {
   id: number;
   ticket_no: string;
   return_date: string;
-  customer_nic: string;
+  customer_nic: string | null;
   customer_code?: string | null;
   customer_name: string;
   customer_phone?: string | null;

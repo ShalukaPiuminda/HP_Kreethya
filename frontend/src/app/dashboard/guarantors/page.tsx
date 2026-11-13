@@ -3,6 +3,7 @@
 import { UserRoundCheck } from 'lucide-react';
 import { CrudWorkspace, type CrudRecord } from '@/components/crud-workspace';
 import { PHONE_PATTERN, PHONE_TITLE } from '@/lib/phone';
+import { nicFormHooks } from '@/lib/nic';
 
 interface GuarantorRecord extends CrudRecord {
   Code: string;
@@ -24,6 +25,7 @@ export default function GuarantorsPage() {
       icon={UserRoundCheck}
       initialValues={{ name: '', NIC: '', phone: '', address: '' }}
       searchKeys={['Code', 'name', 'NIC', 'phone']}
+      {...nicFormHooks<GuarantorRecord>()}
       fields={[
         {
           name: 'name',
@@ -35,9 +37,9 @@ export default function GuarantorsPage() {
           name: 'NIC',
           label: 'NIC',
           required: true,
-          placeholder: 'National identity number',
-          minLength: 9,
+          placeholder: '901234567V or 199012304567',
           maxLength: 15,
+          help: 'Old: 9 digits + V/X. New: 12 digits. You will be asked to confirm it.',
         },
         {
           name: 'phone',

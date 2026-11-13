@@ -389,6 +389,11 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('role.permission:hire-purchase');
     Route::get('/v1/hp/installments', [App\Http\Controllers\Api\V1\HPController::class, 'installments'])
         ->middleware('role.permission:installments');
+    Route::get('/v1/hp/installments/agreements', [App\Http\Controllers\Api\V1\HPController::class, 'installmentAgreements'])
+        ->middleware('role.permission:installments');
+    Route::get('/v1/hp/installments/agreements/{id}', [App\Http\Controllers\Api\V1\HPController::class, 'installmentStatement'])
+        ->whereNumber('id')
+        ->middleware('role.permission:installments');
     Route::get('/v1/hp', [App\Http\Controllers\Api\V1\HPController::class, 'index'])
         ->middleware('role.permission:hire-purchase');
     Route::post('/v1/hp', [App\Http\Controllers\Api\V1\HPController::class, 'store'])

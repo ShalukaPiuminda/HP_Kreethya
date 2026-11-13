@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Services\Sms\NotifyLkClient;
+use App\Support\Nic;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
@@ -73,14 +74,41 @@ abstract class BranchScopedCrudController extends BaseController
         return $validated;
     }
 
-    protected function nicRules(bool $required): array
+    /**
+     * Sri Lankan NIC: 9 digits + V/X, or 12 digits (see App\Support\Nic).
+     * When editing, an unchanged NIC is not re-checked, so records created
+     * before this rule can still have their other details updated.
+     * $optional: the NIC may be left empty, but must be valid when entered.
+     */
+    protected function nicRules(bool $required, ?Model $model = null, bool $optional = false): array
     {
         return [
-            $required ? 'required' : 'sometimes',
+            $optional ? 'nullable' : ($required ? 'required' : 'sometimes'),
             'string',
-            'min:9',
             'max:15',
+            function (string $attribute, mixed $value, callable $fail) use ($model): void {
+                if ($model !== null && Nic::normalise((string) $value) === Nic::normalise((string) $model->NIC)) {
+                    return;
+                }
+
+                if (! Nic::isValid((string) $value)) {
+                    $fail('Enter a valid NIC: 9 digits followed by V or X (e.g. 901234567V), or 12 digits (e.g. 199012304567).');
+                }
+            },
         ];
+    }
+
+    /**
+     * Normalise the NIC (no spaces, uppercase V/X) before validation, so the
+     * format and uniqueness checks see the value that will be stored.
+     */
+    protected function normaliseRequest(Request $request): void
+    {
+        if (is_string($request->input('NIC'))) {
+            $nic = Nic::normalise($request->input('NIC'));
+            // An empty NIC is stored as NULL: many NULLs are allowed by the unique index, '' is not.
+            $request->merge(['NIC' => $nic === '' ? null : $nic]);
+        }
     }
 
     protected function phoneRules(): array
@@ -123,6 +151,14 @@ abstract class BranchScopedCrudController extends BaseController
                 }
             },
         ];
+    }
+
+    /**
+     * Persist an update. Override to run extra work in the same transaction.
+     */
+    protected function performUpdate(Model $record, array $validated): void
+    {
+        $record->update($validated);
     }
 
     protected function beforeDelete(Model $model): ?JsonResponse
@@ -213,6 +249,7 @@ abstract class BranchScopedCrudController extends BaseController
     public function store(Request $request): JsonResponse
     {
         $modelClass = $this->modelClass();
+        $this->normaliseRequest($request);
         $validated = $this->prepareValidatedData(
             $request->validate($this->rules())
         );
@@ -238,12 +275,13 @@ abstract class BranchScopedCrudController extends BaseController
             );
         }
 
+        $this->normaliseRequest($request);
         $validated = $this->prepareValidatedData(
             $request->validate($this->rules($record)),
             $record
         );
 
-        $record->update($validated);
+        $this->performUpdate($record, $validated);
         $record->load($this->relationships());
         $record->loadCount($this->relationshipCounts());
 

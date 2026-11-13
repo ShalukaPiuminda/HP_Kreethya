@@ -1,18 +1,35 @@
 'use client';
 
-import { UsersRound } from 'lucide-react';
+import { BadgeCheck, Lock, UsersRound } from 'lucide-react';
 import { CrudWorkspace, type CrudRecord } from '@/components/crud-workspace';
+import { useAuth } from '@/lib/auth-context';
+import { nicFormHooks, normalizeNic, parseNic } from '@/lib/nic';
+import { CustomerLocationInput } from '@/components/customer-location-input';
 
 interface CustomerRecord extends CrudRecord {
   Code: string;
   name: string;
-  NIC: string;
+  NIC: string | null;
   phone: string | null;
   address: string | null;
+  latitude: string | null;
+  longitude: string | null;
+  location_note: string | null;
   advance_balance: string;
+  /** True once the customer has a credit sale or HP agreement. */
+  nic_locked?: boolean;
+}
+
+/** True when this edit changes the NIC of a locked customer. */
+function changingLockedNic(editing: CustomerRecord | null, nic: unknown) {
+  return Boolean(editing?.nic_locked) && normalizeNic(String(nic ?? '')) !== normalizeNic(editing?.NIC);
 }
 
 export default function CustomersPage() {
+  const { hasPermission } = useAuth();
+  const canEditLockedNic = hasPermission('customer-nic', 'can_update');
+  const nicHooks = nicFormHooks<CustomerRecord>({ updatesLinkedRecords: true, optional: true });
+
   return (
     <CrudWorkspace<CustomerRecord>
       title="Customers"
@@ -22,9 +39,63 @@ export default function CustomersPage() {
       singular="Customer"
       plural="Customers"
       icon={UsersRound}
-      initialValues={{ name: '', NIC: '', phone: '', address: '' }}
+      initialValues={{ name: '', NIC: '', nic_change_reason: '', phone: '', address: '', latitude: '', longitude: '', location_note: '' }}
+      renderFormExtra={(values, onChange) => <CustomerLocationInput values={values} onChange={onChange} />}
       searchKeys={['Code', 'name', 'NIC', 'phone']}
+      preparePayload={nicHooks.preparePayload}
+      validateSubmit={(payload, editing) => {
+        const nicProblem = nicHooks.validateSubmit(payload, editing);
+        if (nicProblem) return nicProblem;
+
+        if (changingLockedNic(editing, payload.NIC)) {
+          if (normalizeNic(String(payload.NIC ?? '')) === '') {
+            return 'The NIC cannot be removed: this customer has credit sales or HP agreements, which need a NIC.';
+          }
+          if (!canEditLockedNic) {
+            return 'This customer has credit sales or HP agreements, so their NIC is locked. Ask a manager or admin with the "Edit NIC" permission.';
+          }
+          if (String(payload.nic_change_reason ?? '').trim().length < 5) {
+            return 'Give a reason for changing the NIC (at least 5 characters).';
+          }
+        }
+
+        return null;
+      }}
+      confirmSubmit={(payload, editing) => {
+        const message = nicHooks.confirmSubmit(payload, editing);
+        const reason = String(payload.nic_change_reason ?? '').trim();
+        return message && reason ? `${message}\n\nReason: ${reason}` : message;
+      }}
+      renderConfirmation={(payload, message) => {
+        const details = parseNic(String(payload.NIC ?? ''));
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+              <BadgeCheck aria-hidden="true" className="h-6 w-6 shrink-0 text-indigo-600" />
+              <div className="min-w-0">
+                <p className="break-words text-sm font-semibold text-slate-900">{String(payload.name ?? '')}</p>
+                <p className="mt-1 break-all font-mono text-lg font-bold tracking-wide text-indigo-700">{details?.nic || 'No NIC provided'}</p>
+              </div>
+            </div>
+            {details && (
+              <dl className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 p-4 text-sm">
+                {[
+                  ['NIC format', details.format === 'new' ? 'New · 12 digits' : 'Old · 9 digits + letter'],
+                  ['Gender', details.gender],
+                  ['Date of birth', `${details.birthday} ${details.birthYear}`],
+                ].map(([label, value]) => <div key={label} className={label === 'Date of birth' ? 'col-span-2' : ''}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-800">{value}</dd></div>)}
+              </dl>
+            )}
+            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+              {message.split('\n').filter((line) => line && !line.startsWith('Please confirm') && !/^(Format|Born|Gender):/.test(line)).map((line, index) => <p key={index}>{line}</p>)}
+            </div>
+          </div>
+        );
+      }}
       fields={[
+        { name: 'latitude', label: 'Latitude', type: 'hidden', nullable: true },
+        { name: 'longitude', label: 'Longitude', type: 'hidden', nullable: true },
+        { name: 'location_note', label: 'Location note', type: 'hidden', nullable: true },
         {
           name: 'name',
           label: 'Customer name',
@@ -34,10 +105,28 @@ export default function CustomersPage() {
         {
           name: 'NIC',
           label: 'NIC',
-          required: true,
-          placeholder: 'National identity number',
-          minLength: 9,
+          placeholder: '901234567V or 199012304567',
           maxLength: 15,
+          disabled: (editing) => Boolean(editing?.nic_locked) && !canEditLockedNic,
+          help: (editing) => {
+            if (!editing?.nic_locked) {
+              return 'Optional for cash customers; required for credit sales and HP. Old: 9 digits + V/X. New: 12 digits.';
+            }
+            return canEditLockedNic
+              ? 'Locked: this customer has credit sales or HP agreements. You can change it, but a reason is required.'
+              : 'Locked: this customer has credit sales or HP agreements. Only a manager or admin with the "Edit NIC" permission can change it.';
+          },
+        },
+        {
+          name: 'nic_change_reason',
+          label: 'Reason for NIC change',
+          type: 'textarea',
+          nullable: true,
+          required: true,
+          placeholder: 'e.g. Typo correction, or new NIC card issued',
+          help: 'Saved in the change history with your name.',
+          span: 2,
+          hidden: (editing, values) => !changingLockedNic(editing, values.NIC),
         },
         {
           name: 'phone',
@@ -72,11 +161,30 @@ export default function CustomersPage() {
           render: (record) => (
             <div>
               <div className="font-semibold text-slate-900">{record.name}</div>
-              <div className="mt-0.5 text-xs text-slate-500">{record.NIC}</div>
+              <div className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
+                {record.NIC || <span className="italic text-slate-400">No NIC</span>}
+                {record.nic_locked && (
+                  <span
+                    title="NIC locked: credit sales or HP agreements exist"
+                    className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                  >
+                    <Lock className="h-2.5 w-2.5" /> Locked
+                  </span>
+                )}
+              </div>
             </div>
           ),
         },
         { key: 'phone', label: 'Phone' },
+        {
+          key: 'location', label: 'Location',
+          render: (record) => record.latitude != null && record.longitude != null ? (
+            <div className="space-y-1">
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${record.latitude},${record.longitude}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-700 underline">Directions ↗</a>
+              {record.location_note && <p className="max-w-48 break-words text-xs text-slate-500">{record.location_note}</p>}
+            </div>
+          ) : <span className="text-xs text-slate-400">Not added</span>,
+        },
         {
           key: 'advance_balance',
           label: 'Advance Balance',

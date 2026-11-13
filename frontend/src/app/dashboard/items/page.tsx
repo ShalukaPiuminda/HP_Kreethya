@@ -175,11 +175,8 @@ export default function ItemsPage() {
       ...(makes.length === 0
         ? ['Create at least one make or model before adding items.']
         : []),
-      ...(colors.length === 0
-        ? ['Create at least one color before adding items.']
-        : []),
     ],
-    [brands.length, categories.length, colors.length, makes.length]
+    [brands.length, categories.length, makes.length]
   );
 
   const openCreate = () => {

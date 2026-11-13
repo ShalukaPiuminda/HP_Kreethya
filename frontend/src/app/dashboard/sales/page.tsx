@@ -59,6 +59,7 @@ import {
   Salesperson,
 } from '@/lib/sales';
 import { ChequeEntryFields } from '@/components/cheque-entry-fields';
+import { CustomerAccountSummary } from '@/components/customer-account-summary';
 import type {
   ChequeBank,
   PaymentBankAccount,
@@ -70,6 +71,7 @@ import { ScanInput } from '@/components/scan-input';
 import { StockQtyInput } from '@/components/stock-qty-input';
 import { WarrantyLineBadge } from '@/components/warranty-line-badge';
 import { findItemByScan } from '@/lib/barcode';
+import { NO_NIC_CONFIRM, nicConfirmMessage, nicError, normalizeNic } from '@/lib/nic';
 import {
   Badge,
   DiscountInput,
@@ -707,13 +709,23 @@ export default function SalesPage() {
 
   const saveQuickCustomer = async (event: React.FormEvent) => {
     event.preventDefault();
-    setCustomerSaving(true);
     setNotice(null);
+
+    // NIC is optional (cash customers); when entered it must be valid.
+    const nic = normalizeNic(customerQuickAdd.NIC);
+    const invalidNic = nic === '' ? null : nicError(nic);
+    if (invalidNic) {
+      setNotice({ type: 'error', message: invalidNic });
+      return;
+    }
+    if (!window.confirm(nic === '' ? NO_NIC_CONFIRM : nicConfirmMessage(nic))) return;
+
+    setCustomerSaving(true);
 
     try {
       const response = await api.post<SalesCustomer>('/v1/customers', {
         name: customerQuickAdd.name.trim(),
-        NIC: customerQuickAdd.NIC.trim(),
+        NIC: nic || null,
         phone: customerQuickAdd.phone.trim() || null,
         address: customerQuickAdd.address.trim() || null,
       });
@@ -1170,10 +1182,7 @@ export default function SalesPage() {
                   <span className="inline-flex items-center gap-1.5"><Hash className="h-3.5 w-3.5 text-slate-400" />{selectedCustomer.NIC}</span>
                   {selectedCustomer.phone && <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-slate-400" />{selectedCustomer.phone}</span>}
                   {selectedCustomer.address && <span className="inline-flex min-w-0 items-center gap-1.5"><MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="truncate">{selectedCustomer.address}</span></span>}
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200 sm:ml-auto">
-                    <Wallet className="h-3.5 w-3.5" />
-                    Advance {formatCurrency(numeric(selectedCustomer.advance_balance))}
-                  </span>
+                  <CustomerAccountSummary key={form.customer_code} customerCode={form.customer_code} advance={numeric(selectedCustomer.advance_balance)} />
                 </div>
               )}
             </FormSection>
@@ -1496,6 +1505,11 @@ export default function SalesPage() {
           width="max-w-2xl"
         >
           <form onSubmit={saveQuickCustomer} className="grid gap-4 p-6 sm:grid-cols-2">
+            {notice?.type === 'error' && (
+              <div className="sm:col-span-2">
+                <OperationNotice type="error">{notice.message}</OperationNotice>
+              </div>
+            )}
             <OperationField label="Customer name" required>
               <input
                 value={customerQuickAdd.name}
@@ -1510,7 +1524,7 @@ export default function SalesPage() {
                 required
               />
             </OperationField>
-            <OperationField label="NIC" required>
+            <OperationField label="NIC (optional for cash sales)">
               <input
                 value={customerQuickAdd.NIC}
                 onChange={(event) =>
@@ -1519,11 +1533,9 @@ export default function SalesPage() {
                     NIC: event.target.value,
                   }))
                 }
-                minLength={9}
                 maxLength={15}
-                placeholder="National identity number"
+                placeholder="901234567V or 199012304567"
                 className={inputClass}
-                required
               />
             </OperationField>
             <OperationField label="Mobile number">
@@ -1557,7 +1569,7 @@ export default function SalesPage() {
                 saving={customerSaving}
                 submitLabel="Create customer"
                 onCancel={() => setShowCustomerQuickAdd(false)}
-                disabled={!customerQuickAdd.name.trim() || customerQuickAdd.NIC.trim().length < 9}
+                disabled={!customerQuickAdd.name.trim()}
               />
             </div>
           </form>
